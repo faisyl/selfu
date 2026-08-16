@@ -1,0 +1,135 @@
+# selfu platform — Phase 1 stack: database, authentik (identity),
+# platform API. Traefik ingress arrives with Phase 5; chasquid with
+# Phase 4. No image uses `latest` (spec §89).
+#
+# The API runs on the host network: in this layout authentik's issuer
+# (http://localhost:9000) must be resolvable by both the browser and the
+# API container. Phase 5 replaces this with a single Traefik front.
+name: selfu
+
+services:
+  db:
+    image: postgres:17.5-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: selfu
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # API runs on host network (browser/API share localhost issuer).
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d selfu"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.5.6
+    restart: unless-stopped
+    command: ["server"]
+    environment: &authentik-env
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?set in .env}
+      AUTHENTIK_HOST: ${AUTHENTIK_HOST:?set in .env}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:?set in .env}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?set in .env}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?set in .env}
+      AUTHENTIK_POSTGRESQL__HOST: db
+      AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD}
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+    ports:
+      - "9000:8080"
+      - "9443:9443"
+    volumes:
+      - ak-media:/media
+      - ak-templates:/templates
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.5.6
+    restart: unless-stopped
+    command: ["worker"]
+    environment: *authentik-env
+    volumes:
+      - ak-media:/media
+      - ak-templates:/templates
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  migrate:
+    build: .
+    restart: "no"
+    command: ["/usr/local/bin/migrate", "up"]
+    environment:
+      SELFU_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/selfu
+    depends_on:
+      db:
+        condition: service_healthy
+
+  authentik-bootstrap:
+    build: .
+    restart: "no"
+    command: ["/usr/local/bin/authentik-bootstrap"]
+    environment:
+      AUTHENTIK_BASE_URL: http://localhost:9000
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      SELFU_OIDC_CLIENT_ID: ${SELFU_OIDC_CLIENT_ID}
+      SELFU_OIDC_CLIENT_SECRET: ${SELFU_OIDC_CLIENT_SECRET}
+      SELFU_OIDC_REDIRECT_URL: ${SELFU_OIDC_REDIRECT_URL}
+      SELFU_OIDC_SLUG: selfu
+    network_mode: host
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      SELFU_HTTP_ADDR: ":8080"
+      SELFU_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/selfu
+      SELFU_SESSION_SECRET: ${SELFU_SESSION_SECRET:?set in .env}
+      SELFU_SESSION_TTL: "12h"
+      SELFU_COOKIE_SECURE: "false"
+      SELFU_OIDC_CLIENT_ID: ${SELFU_OIDC_CLIENT_ID:?set in .env}
+      SELFU_OIDC_CLIENT_SECRET: ${SELFU_OIDC_CLIENT_SECRET:?set in .env}
+      SELFU_OIDC_ISSUER: ${AUTHENTIK_HOST}${SELFU_OIDC_ISSUER_PATH:-/application/o/selfu}
+      SELFU_OIDC_REDIRECT_URL: ${SELFU_OIDC_REDIRECT_URL:?set in .env}
+      SELFU_AFTER_LOGIN_PATH: /
+    network_mode: host
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      authentik-bootstrap:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  ak-media:
+  ak-templates:
