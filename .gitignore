@@ -1,0 +1,25 @@
+# Go
+bin/
+dist/
+*.exe
+*.test
+*.out
+coverage*
+
+# secrets / state
+.env
+*.env
+!*.env.example
+data/
+keys/
+*.pem
+*.key
+
+# editor/OS
+.idea/
+.vscode/
+.DS_Store
+
+# misc
+*.log
+.tmp/
