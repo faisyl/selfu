@@ -31,6 +31,10 @@ const (
 	// base URL and service token used for identity provisioning (G2).
 	EnvAuthentikURL   = "SELFU_AUTHENTIK_URL"
 	EnvAuthentikToken = "SELFU_AUTHENTIK_TOKEN"
+	// EnvCloudflareToken and EnvCloudflareZone optionally enable automatic
+	// DNS provisioning via Cloudflare (G3); absent → Manual provider.
+	EnvCloudflareToken = "SELFU_CLOUDFLARE_API_TOKEN"
+	EnvCloudflareZone  = "SELFU_CLOUDFLARE_ZONE_ID"
 )
 
 const (
@@ -57,7 +61,16 @@ type Config struct {
 	// for the admin connection.
 	Authentik AuthentikConfig
 
+	// Cloudflare optionally enables automatic DNS provisioning (G3).
+	Cloudflare CloudflareConfig
+
 	OIDC OIDCConfig
+}
+
+// CloudflareConfig optionally configures the Cloudflare DNS provider.
+type CloudflareConfig struct {
+	APIToken string
+	ZoneID   string
 }
 
 // AuthentikConfig carries authentik admin API credentials.
@@ -129,6 +142,9 @@ func Load() (*Config, error) {
 	cfg.Authentik.BaseURL = required(EnvAuthentikURL, &errs)
 	cfg.Authentik.Token = required(EnvAuthentikToken, &errs)
 	cfg.Authentik.TLSInsecure = cfg.OIDC.TLSInsecure
+
+	cfg.Cloudflare.APIToken = os.Getenv(EnvCloudflareToken)
+	cfg.Cloudflare.ZoneID = os.Getenv(EnvCloudflareZone)
 
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)

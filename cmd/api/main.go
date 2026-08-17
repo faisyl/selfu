@@ -67,6 +67,15 @@ func run(logger *slog.Logger) error {
 	// Identity admin client for user/group provisioning (G2).
 	ak := authentik.New(cfg.Authentik.BaseURL, cfg.Authentik.Token, cfg.Authentik.TLSInsecure)
 
+	// DNS provider: Manual by default; Cloudflare when configured (G3).
+	var dnsProvider dns.Provider = dns.ManualProvider{}
+	if cfg.Cloudflare.APIToken != "" && cfg.Cloudflare.ZoneID != "" {
+		dnsProvider = dns.NewCloudflare(dns.CloudflareConfig{
+			APIToken: cfg.Cloudflare.APIToken,
+			ZoneID:   cfg.Cloudflare.ZoneID,
+		})
+	}
+
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.New(httpapi.Deps{
@@ -81,7 +90,7 @@ func run(logger *slog.Logger) error {
 			Identity:       ak,
 			ProviderName:   cfg.OIDC.Issuer,
 			DomainStore:    st,
-			DNSProvider:    dns.ManualProvider{},
+			DNSProvider:    dnsProvider,
 			TXTLookup:      dns.DefaultTXTLookup,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
