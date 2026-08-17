@@ -23,7 +23,7 @@ updates this file, and commits.
 | G1 Foundation | 1 | done | verified 2026-08-17 (incl. auth.login.succeeded audit) |
 | G2 Identity | 2 | done | verified 2026-08-17: add-user/remove-user + authentik sync + default-deny |
 | G3 Domains | 3 | done | verified 2026-08-17: TXT verification, containment, verified hostname gate |
-| G4 Mail (chasquid) | 4 | pending | depends on G3 |
+| G4a Mail core (chasquid) | 4 | done | verified 2026-08-17: real SMTP AUTH + alias + rotate |
 | G5 Applications | 5 | pending | depends on G4 |
 | G6 Reconciliation | 6 | pending | depends on G5 (worker exists from G1) |
 | G7 UI | 7 | pending | depends on G6 |
@@ -148,6 +148,30 @@ live-verified. G6 owns ongoing record reconciliation.
 ---
 
 ## G4 — Mail (Phase 4, chasquid)
+
+**Status (2026-08-17): G4a DONE (`d41d0b3`), G4b OPEN.** G4a verified live
+against a real chasquid 1.17.0 (pinned source build) + sidecar agent: enable
+mail on verified `pruxi.in` (chasquid domain registered via restart, §91);
+identities `alice`/`bob@pruxi.in` with independent high-entropy SMTP
+credentials (shown once, fingerprint only, §35/§62/§36); **real
+STARTTLS+AUTH PLAIN submission on :587 → 235 and spool delivery**; alias
+`support@pruxi.in → alice` (aliases file + `aliases-resolve`); credential
+rotation (old rejected, new accepted, 1 active + 1 revoked); same-org
+destination validation (§39); mail audit events (§68). Migration 00004
+idempotent (v4). ChasquidProvider still thin (wraps AgentClient) —
+ChasquidProvider assembly (§58) is folded into G4b.
+
+**G4b — remaining (tracked, next session):**
+- DKIM provisioning + key rotation per mail domain (§23, §28, §68 `mail.dkim.*`).
+- Mail TLS: platform-managed certs for the SMTP endpoints (§52); move off
+  self-signed dev certs.
+- Sender authorization: post-DATA hook enforcing MailSubmissionPolicy
+  (§47–50, §49 table already exists) — the spec-critical isolation layer.
+- Mail health checks + reconciliation worker (§66, §92): mail_domains →
+  chasquid domain; identities → users; aliases; conservative (never mass-delete).
+- Group-driven aliases (§42–43) and application mail identities + SMTP
+  credentials (§44–46, §70–73).
+- `mail.status` endpoint enrichment (§65) + monitoring export (§67).
 
 **Objective**: chasquid compose service; ChasquidProvider + ChasquidController (§58–59); mail domains/identities/credentials/aliases; DKIM, TLS, sender authorization + post-DATA hook (§47–50); health + reconciliation (§66); mail audit events (§68).
 
