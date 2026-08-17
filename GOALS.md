@@ -20,7 +20,7 @@ updates this file, and commits.
 
 | Goal | Spec phase | Status | Notes |
 |---|---|---|---|
-| G1 Foundation | 1 | in-progress | 2026-08-16: started; repo bootstrap, schema, API, OIDC login, audit |
+| G1 Foundation | 1 | done | verified 2026-08-17 (incl. auth.login.succeeded audit) |
 | G2 Identity | 2 | pending | depends on G1 |
 | G3 Domains | 3 | pending | depends on G2 |
 | G4 Mail (chasquid) | 4 | pending | depends on G3 |
@@ -43,30 +43,15 @@ updates this file, and commits.
 
 ## G1 — Phase 1 Foundation
 
-**Status (2026-08-17):** implementation committed + wired into a running stack.
-VERIFIED: unit tests/vet/build green; migrations apply to fresh PG and are
-idempotent (2nd run = no-op); `users`+`audit_events` tables exist; compose up
-brings postgres/redis/authentik/api healthy; `GET :18080/api/v1/health` = 200;
-`GET /api/v1/me` unauthenticated = 401; authentik OIDC provider+app provisioned;
-authorize request validates (grant-types + scope-mappings fixed).
-**NOT VERIFIED (blocked):** interactive OIDC login → `users`/`audit_events` row.
-The authentik login flow is JS/web-component driven; this environment's headless
-browser cannot render its flow executor, and the REST executor POST returns 405.
-This is the sole unverified success criterion (NS6). Resume:
+**Status (2026-08-17):** **VERIFIED — G1 COMPLETE.** All success criteria met:
+unit tests/vet/build green; migrations apply to fresh PG and are idempotent;
+compose stack healthy; health 200; `/me` 401 unauthenticated; and an
+interactive authentik login (done manually) produced a `users` row
+(`admin@selfu.local`) and `auth.login.succeeded` audit events — both counts ≥ 1.
 
-```
-cd /home/faisal/Work/selfu
-# stack already up; admin login at http://localhost:9000
-#   user: <AUTHENTIK_BOOTSTRAP_EMAIL in .env>   pass: <AUTHENTIK_BOOTSTRAP_PASSWORD in .env>
-# From a real (non-headless) browser, open:
-#   http://localhost:18080/api/v1/auth/login     -> authentik login -> consent -> back to platform
-# Then: curl -fsS http://localhost:18080/api/v1/me   (expect the returned OIDC user JSON)
-sg docker -c "docker compose exec -T db psql -U selfu -d selfu -tAc 'SELECT count(*) FROM users'"
-sg docker -c "docker compose exec -T db psql -U selfu -d selfu -tAc 'SELECT count(*) FROM audit_events'"
-# both must be >= 1 after login.
-```
+**Handoff:** G1 has no pending action; next goal is **G2 (Identity)**.
 
-**Resume / operating notes (learned this session, keep into later goals):**
+**Operating notes (learned this session, keep into later goals):**
 - authentik 2026.5.6 (all-in-one image) binds HTTP on `:9000` and HTTPS on
   `:9443` **on IPv6 only**; compose must map `9000:9000`, NOT `9000:8080` (that
   port is not bound — connections reset). Used HTTP for this phase so no TLS/cert
