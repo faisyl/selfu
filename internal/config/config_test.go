@@ -14,6 +14,8 @@ func setAll(t *testing.T) {
 	t.Setenv(EnvOIDCClientSecr, "secret")
 	t.Setenv(EnvOIDCIssuer, "https://auth.example.com/application/o/platform")
 	t.Setenv(EnvOIDCRedirectURL, "http://localhost:8080/api/v1/auth/callback")
+	t.Setenv(EnvAuthentikURL, "https://auth.example.com")
+	t.Setenv(EnvAuthentikToken, "s3cr3t-token")
 }
 
 func TestLoadDefaults(t *testing.T) {

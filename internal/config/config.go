@@ -27,6 +27,10 @@ const (
 	// identity provider connection. Development only (self-signed local
 	// certs); must be false in production.
 	EnvOIDCTLSInsecure = "SELFU_OIDC_TLS_INSECURE"
+	// EnvAuthentikURL and EnvAuthentikToken are the authentik admin API
+	// base URL and service token used for identity provisioning (G2).
+	EnvAuthentikURL   = "SELFU_AUTHENTIK_URL"
+	EnvAuthentikToken = "SELFU_AUTHENTIK_TOKEN"
 )
 
 const (
@@ -48,7 +52,19 @@ type Config struct {
 	// AfterLoginPath is where the browser is sent after the OIDC callback.
 	AfterLoginPath string
 
+	// Authentik is the authentik admin API configuration (identity
+	// provisioning, spec §16). AuthentikTLSInsecure mirrors OIDC.TLSInsecure
+	// for the admin connection.
+	Authentik AuthentikConfig
+
 	OIDC OIDCConfig
+}
+
+// AuthentikConfig carries authentik admin API credentials.
+type AuthentikConfig struct {
+	BaseURL     string
+	Token       string
+	TLSInsecure bool
 }
 
 // OIDCConfig describes the platform's authentik OIDC client configuration.
@@ -109,6 +125,10 @@ func Load() (*Config, error) {
 	} else {
 		cfg.OIDC.TLSInsecure = v == "true"
 	}
+
+	cfg.Authentik.BaseURL = required(EnvAuthentikURL, &errs)
+	cfg.Authentik.Token = required(EnvAuthentikToken, &errs)
+	cfg.Authentik.TLSInsecure = cfg.OIDC.TLSInsecure
 
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)

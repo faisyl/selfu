@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"selfu/internal/auth"
+	"selfu/internal/authentik"
 	"selfu/internal/config"
 	"selfu/internal/httpapi"
 	"selfu/internal/store"
@@ -62,6 +63,9 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	// Identity admin client for user/group provisioning (G2).
+	ak := authentik.New(cfg.Authentik.BaseURL, cfg.Authentik.Token, cfg.Authentik.TLSInsecure)
+
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.New(httpapi.Deps{
@@ -72,6 +76,9 @@ func run(logger *slog.Logger) error {
 			Audit:          st,
 			OIDCConfig:     cfg.OIDC,
 			AfterLoginPath: cfg.AfterLoginPath,
+			IdentityStore:  st,
+			Identity:       ak,
+			ProviderName:   cfg.OIDC.Issuer,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,

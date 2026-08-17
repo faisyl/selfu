@@ -122,6 +122,8 @@ services:
       SELFU_OIDC_ISSUER: ${AUTHENTIK_HOST}${SELFU_OIDC_ISSUER_PATH:-/application/o/selfu/}
       SELFU_OIDC_REDIRECT_URL: ${SELFU_OIDC_REDIRECT_URL:?set in .env}
       SELFU_OIDC_TLS_INSECURE: "true"
+      SELFU_AUTHENTIK_URL: ${AUTHENTIK_HOST}
+      SELFU_AUTHENTIK_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
       SELFU_AFTER_LOGIN_PATH: /
     network_mode: host
     depends_on:

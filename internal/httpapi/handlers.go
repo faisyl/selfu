@@ -42,6 +42,13 @@ type Deps struct {
 	Audit          AuditStore
 	OIDCConfig     config.OIDCConfig
 	AfterLoginPath string
+
+	// IdentityStore is the identity persistence surface (G2).
+	IdentityStore IdentityStore
+	// Identity provisions external identities in authentik.
+	Identity IdentityClient
+	// ProviderName labels external_resources (the authentik issuer).
+	ProviderName string
 }
 
 // Handler serves the REST API and the OIDC login flow.

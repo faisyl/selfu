@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -56,3 +57,14 @@ func (s *Store) Close() {
 
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("store: not found")
+
+// ErrConflict is returned when an insert would violate a uniqueness
+// constraint (e.g. duplicate slug or email).
+var ErrConflict = errors.New("store: conflict")
+
+// isUnique reports whether err is a PostgreSQL unique-violation (23505),
+// including when wrapped.
+func isUnique(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}

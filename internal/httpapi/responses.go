@@ -5,6 +5,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -22,6 +23,15 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{
 		"error": map[string]string{"code": code, "message": message},
 	})
+}
+
+// decodeJSON decodes a JSON request body, rejecting unknown trailing data.
+func decodeJSON(r *http.Request, v any) error {
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	return nil
 }
 
 // accessLog logs every request with status and duration.

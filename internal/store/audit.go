@@ -17,6 +17,9 @@ func (s *Store) CreateAuditEvent(ctx context.Context, e domain.AuditEvent) error
 	if !e.Valid() {
 		return fmt.Errorf("invalid audit event action %q", e.Action)
 	}
+	if e.Details == nil {
+		e.Details = map[string]any{}
+	}
 	_, err := s.pool.Exec(ctx, insertAuditEventSQL,
 		e.ID, e.ActorUserID, e.Action, e.ResourceType, e.ResourceID, e.Details, e.RequestID)
 	if err != nil {
