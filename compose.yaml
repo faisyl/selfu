@@ -55,7 +55,7 @@ services:
       AUTHENTIK_LOG_LEVEL: info
       AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
     ports:
-      - "9000:8080"
+      - "9000:9000"
       - "9443:9443"
     volumes:
       - ak-media:/media
@@ -83,7 +83,8 @@ services:
   migrate:
     build: .
     restart: "no"
-    command: ["/usr/local/bin/migrate", "up"]
+    entrypoint: ["/usr/local/bin/migrate"]
+    command: ["up"]
     environment:
       SELFU_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/selfu
     depends_on:
@@ -93,9 +94,10 @@ services:
   authentik-bootstrap:
     build: .
     restart: "no"
-    command: ["/usr/local/bin/authentik-bootstrap"]
+    entrypoint: ["/usr/local/bin/authentik-bootstrap"]
     environment:
       AUTHENTIK_BASE_URL: http://localhost:9000
+      AUTHENTIK_TLS_INSECURE: "false"
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
       SELFU_OIDC_CLIENT_ID: ${SELFU_OIDC_CLIENT_ID}
       SELFU_OIDC_CLIENT_SECRET: ${SELFU_OIDC_CLIENT_SECRET}
@@ -110,15 +112,16 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      SELFU_HTTP_ADDR: ":8080"
+      SELFU_HTTP_ADDR: ":18080"
       SELFU_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/selfu
       SELFU_SESSION_SECRET: ${SELFU_SESSION_SECRET:?set in .env}
       SELFU_SESSION_TTL: "12h"
       SELFU_COOKIE_SECURE: "false"
       SELFU_OIDC_CLIENT_ID: ${SELFU_OIDC_CLIENT_ID:?set in .env}
       SELFU_OIDC_CLIENT_SECRET: ${SELFU_OIDC_CLIENT_SECRET:?set in .env}
-      SELFU_OIDC_ISSUER: ${AUTHENTIK_HOST}${SELFU_OIDC_ISSUER_PATH:-/application/o/selfu}
+      SELFU_OIDC_ISSUER: ${AUTHENTIK_HOST}${SELFU_OIDC_ISSUER_PATH:-/application/o/selfu/}
       SELFU_OIDC_REDIRECT_URL: ${SELFU_OIDC_REDIRECT_URL:?set in .env}
+      SELFU_OIDC_TLS_INSECURE: "true"
       SELFU_AFTER_LOGIN_PATH: /
     network_mode: host
     depends_on:

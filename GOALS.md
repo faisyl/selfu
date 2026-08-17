@@ -43,22 +43,44 @@ updates this file, and commits.
 
 ## G1 — Phase 1 Foundation
 
-**Status (2026-08-17):** implementation committed (`1fcdcd9`); unit tests / vet / build green. **Not yet verified end-to-end** — resume here:
+**Status (2026-08-17):** implementation committed + wired into a running stack.
+VERIFIED: unit tests/vet/build green; migrations apply to fresh PG and are
+idempotent (2nd run = no-op); `users`+`audit_events` tables exist; compose up
+brings postgres/redis/authentik/api healthy; `GET :18080/api/v1/health` = 200;
+`GET /api/v1/me` unauthenticated = 401; authentik OIDC provider+app provisioned;
+authorize request validates (grant-types + scope-mappings fixed).
+**NOT VERIFIED (blocked):** interactive OIDC login → `users`/`audit_events` row.
+The authentik login flow is JS/web-component driven; this environment's headless
+browser cannot render its flow executor, and the REST executor POST returns 405.
+This is the sole unverified success criterion (NS6). Resume:
 
 ```
 cd /home/faisal/Work/selfu
-make gen-env                 # fills .env with random secrets (keep values in sync)
-sg docker -c 'docker compose up -d --wait'
-sg docker -c 'docker compose run --rm migrate up'   # run twice: 2nd must be no-op (idempotent)
-curl -fsS http://localhost:8080/api/v1/health       # expect 200 ok
-# OIDC login via browser at http://localhost:9000 (admin@selfu.local + .env password)
-curl -i http://localhost:8080/api/v1/me             # expect 401 unauthenticated
-# psql: SELECT count(*) FROM users; SELECT count(*) FROM audit_events;  # both >= 1 after login
+# stack already up; admin login at http://localhost:9000
+#   user: <AUTHENTIK_BOOTSTRAP_EMAIL in .env>   pass: <AUTHENTIK_BOOTSTRAP_PASSWORD in .env>
+# From a real (non-headless) browser, open:
+#   http://localhost:18080/api/v1/auth/login     -> authentik login -> consent -> back to platform
+# Then: curl -fsS http://localhost:18080/api/v1/me   (expect the returned OIDC user JSON)
+sg docker -c "docker compose exec -T db psql -U selfu -d selfu -tAc 'SELECT count(*) FROM users'"
+sg docker -c "docker compose exec -T db psql -U selfu -d selfu -tAc 'SELECT count(*) FROM audit_events'"
+# both must be >= 1 after login.
 ```
 
-**Resume note:** API uses `network_mode: host`; this layout is valid only until
-Phase 5 introduces Traefik, which must replace it (single public front, internal
-authentik route). Docker group access was granted (`usermod -aG docker faisal`).
+**Resume / operating notes (learned this session, keep into later goals):**
+- authentik 2026.5.6 (all-in-one image) binds HTTP on `:9000` and HTTPS on
+  `:9443` **on IPv6 only**; compose must map `9000:9000`, NOT `9000:8080` (that
+  port is not bound — connections reset). Used HTTP for this phase so no TLS/cert
+  in the browser path.
+- OAuth2 providers in authentik are created via `/api/v3/providers/oauth2/`
+  (there is no `oidc` model); their `pk` is an integer while flows/certkeys/apps
+  use UUID-string `pk`. Must set `grant_types:["authorization_code"]` and attach
+  the default scope mappings (`email`,`profile`,`openid`) or authorize rejects.
+  `redirect_uris` entries are objects `{url, matching_mode:"strict"}`; an
+  `invalidation_flow` is required. All now baked into `cmd/authentik-bootstrap`.
+- Host `:8080` was already occupied by an unrelated service → the platform runs
+  on `:18080` (update `SELFU_HTTP_ADDR`/redirect/config if that conflicts).
+- API uses `network_mode: host`; valid only until Phase 5 (Traefik) replaces it.
+- Docker group access granted (`usermod -aG docker faisal`); use `sg docker -c …`.
 
 **Objective.** Bootstrappable Go project: PostgreSQL schema + migrations, Go domain model, REST API, authentik OIDC platform login, audit logging — wired into a pinned Docker Compose stack (postgres, authentik, api).
 

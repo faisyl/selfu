@@ -56,6 +56,7 @@ func run(logger *slog.Logger) error {
 		ClientSecret: cfg.OIDC.ClientSecret,
 		Issuer:       cfg.OIDC.Issuer,
 		RedirectURL:  cfg.OIDC.RedirectURL,
+		TLSInsecure:  cfg.OIDC.TLSInsecure,
 	}, logger)
 	if err != nil {
 		return err

@@ -3,6 +3,7 @@
 -- Email addresses are stored lowercase (CHECK below); identity linkage uses
 -- (auth_provider, auth_identity_id), never display names (spec §16).
 
+-- +goose Up
 CREATE TABLE users (
     id               uuid PRIMARY KEY,
     email            text NOT NULL,
@@ -36,3 +37,7 @@ CREATE TABLE audit_events (
 CREATE INDEX idx_audit_events_occurred_at ON audit_events (occurred_at DESC);
 CREATE INDEX idx_audit_events_actor ON audit_events (actor_user_id);
 CREATE INDEX idx_audit_events_resource ON audit_events (resource_type, resource_id);
+
+-- +goose Down
+DROP TABLE IF EXISTS audit_events;
+DROP TABLE IF EXISTS users;

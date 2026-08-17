@@ -23,6 +23,10 @@ const (
 	EnvOIDCIssuer      = "SELFU_OIDC_ISSUER"
 	EnvOIDCRedirectURL = "SELFU_OIDC_REDIRECT_URL"
 	EnvAfterLoginPath  = "SELFU_AFTER_LOGIN_PATH"
+	// EnvOIDCTLSInsecure disables TLS certificate verification for the
+	// identity provider connection. Development only (self-signed local
+	// certs); must be false in production.
+	EnvOIDCTLSInsecure = "SELFU_OIDC_TLS_INSECURE"
 )
 
 const (
@@ -55,6 +59,9 @@ type OIDCConfig struct {
 	// e.g. https://auth.example.com/application/o/platform/.
 	Issuer      string
 	RedirectURL string
+	// TLSInsecure disables TLS verification for the issuer connection.
+	// Development only; must be false in production.
+	TLSInsecure bool
 }
 
 // Load reads and validates configuration from the environment.
@@ -95,6 +102,12 @@ func Load() (*Config, error) {
 		errs = append(errs, fmt.Errorf("%s must be true or false", EnvCookieSecure))
 	} else {
 		cfg.CookieSecure = v == "true"
+	}
+
+	if v := os.Getenv(EnvOIDCTLSInsecure); v != "" && v != "true" && v != "false" {
+		errs = append(errs, fmt.Errorf("%s must be true or false", EnvOIDCTLSInsecure))
+	} else {
+		cfg.OIDC.TLSInsecure = v == "true"
 	}
 
 	if len(errs) > 0 {

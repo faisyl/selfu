@@ -3,10 +3,12 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -20,6 +22,9 @@ type OIDCConfig struct {
 	ClientSecret string
 	Issuer       string
 	RedirectURL  string
+	// TLSInsecure disables TLS verification for the issuer connection.
+	// Development only; must be false in production.
+	TLSInsecure bool
 }
 
 // OIDCIdentity is the verified identity extracted from the ID token.
@@ -43,7 +48,14 @@ func NewOIDCProvider(ctx context.Context, cfg OIDCConfig, logger *slog.Logger) (
 	discoveryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	provider, err := oidc.NewProvider(discoveryCtx, strings.TrimSuffix(cfg.Issuer, "/"))
+	if cfg.TLSInsecure {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // dev-only, explicit opt-in
+		client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
+		discoveryCtx = oidc.ClientContext(discoveryCtx, client)
+	}
+
+	provider, err := oidc.NewProvider(discoveryCtx, cfg.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery for %s: %w", cfg.Issuer, err)
 	}

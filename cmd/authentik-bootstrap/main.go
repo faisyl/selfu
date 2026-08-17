@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -54,7 +55,7 @@ func run(ctx context.Context) error {
 	a := &api{
 		base:   base,
 		token:  token,
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: newHTTPClient(os.Getenv("AUTHENTIK_TLS_INSECURE") == "true"),
 	}
 
 	if err := a.waitReady(ctx); err != nil {
@@ -75,11 +76,21 @@ type api struct {
 	client *http.Client
 }
 
+// newHTTPClient builds the API client; tlsInsecure relaxes certificate
+// verification for self-signed dev instances.
+func newHTTPClient(tlsInsecure bool) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if tlsInsecure {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // dev-only
+	}
+	return &http.Client{Transport: transport, Timeout: 15 * time.Second}
+}
+
 // waitReady polls the API until the bootstrap token authenticates.
 func (a *api) waitReady(ctx context.Context) error {
 	var lastErr error
 	for range 30 {
-		_, lastErr = a.do(ctx, http.MethodGet, "/api/v3/core/users/me", nil, nil)
+		_, lastErr = a.do(ctx, http.MethodGet, "/api/v3/core/users/me/", nil, nil)
 		if lastErr == nil {
 			return nil
 		}
@@ -92,36 +103,43 @@ func (a *api) waitReady(ctx context.Context) error {
 	return fmt.Errorf("authentik API not ready: %w", lastErr)
 }
 
-type flow struct {
-	PK int `json:"pk"`
-}
-
-func (a *api) authorizationFlow(ctx context.Context) (int, error) {
+// flowByDesignation returns the pk of a flow with the given designation,
+// preferring a slug starting with preferred when present (default flows
+// have several entries per designation).
+func (a *api) flowByDesignation(ctx context.Context, designation, preferred string) (string, error) {
 	var out struct {
-		Results []flow `json:"results"`
+		Results []struct {
+			PK   string `json:"pk"`
+			Slug string `json:"slug"`
+		} `json:"results"`
 	}
-	q := url.Values{"designation": []string{"authorization"}}
-	if err := a.doInto(ctx, http.MethodGet, "/api/v3/flows/", q, nil, &out); err != nil {
-		return 0, err
+	q := url.Values{"designation": []string{designation}}
+	if err := a.doInto(ctx, http.MethodGet, "/api/v3/flows/instances/", q, nil, &out); err != nil {
+		return "", err
 	}
-	if len(out.Results) == 0 {
-		return 0, errors.New("no authorization flow found; did authentik bootstrap its default flows?")
+	if preferred != "" {
+		for _, f := range out.Results {
+			if strings.HasPrefix(f.Slug, preferred) {
+				return f.PK, nil
+			}
+		}
 	}
-	return out.Results[0].PK, nil
-}
-
-type keyPair struct {
-	PK   int    `json:"pk"`
-	Name string `json:"name"`
+	if len(out.Results) > 0 {
+		return out.Results[0].PK, nil
+	}
+	return "", fmt.Errorf("no flow found for designation %q", designation)
 }
 
 // signingKey returns an existing RSA signing key for OIDC ID tokens.
-func (p *api) signingKey(ctx context.Context) (int, error) {
+func (a *api) signingKey(ctx context.Context) (string, error) {
 	var out struct {
-		Results []keyPair `json:"results"`
+		Results []struct {
+			PK   string `json:"pk"`
+			Name string `json:"name"`
+		} `json:"results"`
 	}
-	if err := p.doInto(ctx, http.MethodGet, "/api/v3/crypto/certificatekeypairs/", nil, nil, &out); err != nil {
-		return 0, err
+	if err := a.doInto(ctx, http.MethodGet, "/api/v3/crypto/certificatekeypairs/", nil, nil, &out); err != nil {
+		return "", err
 	}
 	for _, k := range out.Results {
 		if strings.HasPrefix(strings.ToLower(k.Name), "authentik") {
@@ -131,11 +149,39 @@ func (p *api) signingKey(ctx context.Context) (int, error) {
 	if len(out.Results) > 0 {
 		return out.Results[0].PK, nil
 	}
-	return 0, errors.New("no certificate keypair found")
+	return "", errors.New("no certificate keypair found")
 }
 
-// ensureOIDCProvider creates or reuses the confidential OIDC provider for
-// the platform client and returns its primary key.
+// oauthScopeMappings returns the default OAuth scope-mapping pks for the
+// named scopes (email, profile, openid). Without them authentik only
+// supports the bare "openid" scope and rejects profile/email, which the
+// platform requires for identity claims.
+func (a *api) oauthScopeMappings(ctx context.Context, names ...string) ([]string, error) {
+	var out struct {
+		Results []struct {
+			PK   string `json:"pk"`
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+	q := url.Values{"page_size": []string{"200"}}
+	if err := a.doInto(ctx, http.MethodGet, "/api/v3/propertymappings/all/", q, nil, &out); err != nil {
+		return nil, err
+	}
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want["authentik default OAuth Mapping: OpenID '"+n+"'"] = true
+	}
+	var pks []string
+	for _, pm := range out.Results {
+		if want[pm.Name] {
+			pks = append(pks, pm.PK)
+		}
+	}
+	return pks, nil
+}
+
+// ensureOIDCProvider creates or reuses the confidential OAuth2/OIDC
+// provider for the platform client and returns its primary key.
 func (a *api) ensureOIDCProvider(ctx context.Context, clientID, clientSecret, redirectURL, slug string) (int, error) {
 	var existing struct {
 		Results []struct {
@@ -143,14 +189,18 @@ func (a *api) ensureOIDCProvider(ctx context.Context, clientID, clientSecret, re
 		} `json:"results"`
 	}
 	q := url.Values{"client_id": []string{clientID}}
-	if err := a.doInto(ctx, http.MethodGet, "/api/v3/providers/oidc/", q, nil, &existing); err != nil {
+	if err := a.doInto(ctx, http.MethodGet, "/api/v3/providers/oauth2/", q, nil, &existing); err != nil {
 		return 0, err
 	}
 	if len(existing.Results) > 0 {
 		return existing.Results[0].PK, nil
 	}
 
-	flowPK, err := a.authorizationFlow(ctx)
+	flowPK, err := a.flowByDesignation(ctx, "authorization", "default-provider-authorization-explicit-consent")
+	if err != nil {
+		return 0, err
+	}
+	invalidationPK, err := a.flowByDesignation(ctx, "invalidation", "default-provider-invalidation-flow")
 	if err != nil {
 		return 0, err
 	}
@@ -158,20 +208,27 @@ func (a *api) ensureOIDCProvider(ctx context.Context, clientID, clientSecret, re
 	if err != nil {
 		return 0, err
 	}
+	scopes, err := a.oauthScopeMappings(ctx, "email", "profile", "openid")
+	if err != nil {
+		return 0, err
+	}
 
 	body := map[string]any{
 		"name":               slug,
 		"authorization_flow": flowPK,
+		"invalidation_flow":  invalidationPK,
 		"client_type":        "confidential",
 		"client_id":          clientID,
 		"client_secret":      clientSecret,
-		"redirect_uris":      []string{redirectURL},
+		"redirect_uris":      []map[string]any{{"url": redirectURL, "matching_mode": "strict"}},
 		"signing_key":        keyPK,
+		"grant_types":        []string{"authorization_code"},
+		"property_mappings":  scopes,
 	}
 	var created struct {
 		PK int `json:"pk"`
 	}
-	if err := a.doInto(ctx, http.MethodPost, "/api/v3/providers/oidc/", nil, body, &created); err != nil {
+	if err := a.doInto(ctx, http.MethodPost, "/api/v3/providers/oauth2/", nil, body, &created); err != nil {
 		return 0, err
 	}
 	return created.PK, nil
@@ -182,7 +239,7 @@ func (a *api) ensureOIDCProvider(ctx context.Context, clientID, clientSecret, re
 func (a *api) ensureApplication(ctx context.Context, slug string, providerPK int) error {
 	var existing struct {
 		Results []struct {
-			PK int `json:"pk"`
+			PK string `json:"pk"`
 		} `json:"results"`
 	}
 	q := url.Values{"slug": []string{slug}}
@@ -237,7 +294,7 @@ func (a *api) do(ctx context.Context, method, path string, q url.Values, body an
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("authentik %s %s: status %d: %s", method, path, resp.StatusCode, truncate(string(data), 300))
+		return nil, fmt.Errorf("authentik %s %s: status %d: %s", method, path, resp.StatusCode, truncate(string(data), 400))
 	}
 	return data, nil
 }
