@@ -13,6 +13,7 @@ import (
 
 	"selfu/internal/auth"
 	"selfu/internal/authentik"
+	"selfu/internal/chasquid"
 	"selfu/internal/config"
 	"selfu/internal/dns"
 	"selfu/internal/httpapi"
@@ -76,6 +77,12 @@ func run(logger *slog.Logger) error {
 		})
 	}
 
+	// Chasquid controller (G4); nil when the agent is not configured.
+	var chasquidCtrl chasquid.ChasquidController
+	if cfg.Mail.AgentURL != "" && cfg.Mail.AgentToken != "" {
+		chasquidCtrl = chasquid.NewAgentClient(cfg.Mail.AgentURL, cfg.Mail.AgentToken)
+	}
+
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.New(httpapi.Deps{
@@ -92,6 +99,8 @@ func run(logger *slog.Logger) error {
 			DomainStore:    st,
 			DNSProvider:    dnsProvider,
 			TXTLookup:      dns.DefaultTXTLookup,
+			MailStore:      st,
+			Chasquid:       chasquidCtrl,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,

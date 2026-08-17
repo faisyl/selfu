@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"selfu/internal/auth"
+	"selfu/internal/chasquid"
 	"selfu/internal/config"
 	"selfu/internal/dns"
 	"selfu/internal/domain"
@@ -57,6 +58,11 @@ type Deps struct {
 	DNSProvider dns.Provider
 	// TXTLookup queries TXT records for domain verification.
 	TXTLookup dns.TXTLookup
+
+	// MailStore is the mail persistence surface (G4).
+	MailStore MailStore
+	// Chasquid is the chasquid controller (nil = mail provisioning off).
+	Chasquid chasquid.ChasquidController
 }
 
 // Handler serves the REST API and the OIDC login flow.

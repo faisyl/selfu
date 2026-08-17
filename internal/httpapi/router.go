@@ -33,6 +33,16 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/v1/domains/{id}/hostnames", h.authn(h.addHostname))
 	mux.Handle("GET /api/v1/domains/{id}/hostnames", h.authn(h.listHostnames))
 
+	// G4 — mail.
+	mux.Handle("POST /api/v1/domains/{id}/mail", h.authn(h.enableMail))
+	mux.Handle("GET /api/v1/domains/{id}/mail", h.authn(h.mailStatus))
+	mux.Handle("DELETE /api/v1/domains/{id}/mail", h.authn(h.disableMail))
+	mux.Handle("POST /api/v1/domains/{id}/mail-identities", h.authn(h.createMailIdentity))
+	mux.Handle("GET /api/v1/domains/{id}/mail-identities", h.authn(h.listMailIdentities))
+	mux.Handle("POST /api/v1/mail-identities/{id}/credentials/rotate", h.authn(h.rotateMailCredential))
+	mux.Handle("POST /api/v1/domains/{id}/mail/aliases", h.authn(h.createMailAlias))
+	mux.Handle("GET /api/v1/domains/{id}/mail/aliases", h.authn(h.listMailAliases))
+
 	var root http.Handler = mux
 	root = accessLog(d.Logger)(root)
 	root = withRecoverer(d.Logger)(root)

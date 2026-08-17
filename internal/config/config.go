@@ -35,6 +35,10 @@ const (
 	// DNS provisioning via Cloudflare (G3); absent → Manual provider.
 	EnvCloudflareToken = "SELFU_CLOUDFLARE_API_TOKEN"
 	EnvCloudflareZone  = "SELFU_CLOUDFLARE_ZONE_ID"
+	// EnvChasquidAgentURL and EnvChasquidAgentToken configure the
+	// chasquid-agent sidecar (G4); absent → mail provisioning unavailable.
+	EnvChasquidAgentURL   = "SELFU_CHASQUID_AGENT_URL"
+	EnvChasquidAgentToken = "SELFU_CHASQUID_AGENT_TOKEN"
 )
 
 const (
@@ -64,6 +68,9 @@ type Config struct {
 	// Cloudflare optionally enables automatic DNS provisioning (G3).
 	Cloudflare CloudflareConfig
 
+	// Mail configures the chasquid controller (G4).
+	Mail MailConfig
+
 	OIDC OIDCConfig
 }
 
@@ -71,6 +78,12 @@ type Config struct {
 type CloudflareConfig struct {
 	APIToken string
 	ZoneID   string
+}
+
+// MailConfig points at the chasquid-agent sidecar.
+type MailConfig struct {
+	AgentURL   string
+	AgentToken string
 }
 
 // AuthentikConfig carries authentik admin API credentials.
@@ -145,6 +158,9 @@ func Load() (*Config, error) {
 
 	cfg.Cloudflare.APIToken = os.Getenv(EnvCloudflareToken)
 	cfg.Cloudflare.ZoneID = os.Getenv(EnvCloudflareZone)
+
+	cfg.Mail.AgentURL = os.Getenv(EnvChasquidAgentURL)
+	cfg.Mail.AgentToken = os.Getenv(EnvChasquidAgentToken)
 
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)

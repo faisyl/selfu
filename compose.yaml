@@ -108,6 +108,22 @@ services:
       authentik-server:
         condition: service_healthy
 
+  chasquid:
+    build:
+      context: .
+      dockerfile: docker/chasquid.Dockerfile
+    restart: unless-stopped
+    environment:
+      CHASQUID_AGENT_TOKEN: ${CHASQUID_AGENT_TOKEN:?set in .env}
+      CHASQUID_HOSTNAME: ${CHASQUID_HOSTNAME:-mail.local}
+    ports:
+      - "25:25"
+      - "587:587"
+      - "127.0.0.1:8530:8530"   # chasquid-agent, host-local only
+    volumes:
+      - chasquid-etc:/etc/chasquid
+      - chasquid-data:/data
+
   api:
     build: .
     restart: unless-stopped
@@ -126,6 +142,8 @@ services:
       SELFU_AUTHENTIK_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
       SELFU_CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       SELFU_CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+      SELFU_CHASQUID_AGENT_URL: http://127.0.0.1:8530
+      SELFU_CHASQUID_AGENT_TOKEN: ${CHASQUID_AGENT_TOKEN:-}
       SELFU_AFTER_LOGIN_PATH: /
     network_mode: host
     depends_on:
@@ -140,3 +158,5 @@ volumes:
   pgdata:
   ak-media:
   ak-templates:
+  chasquid-etc:
+  chasquid-data:
