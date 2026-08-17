@@ -22,7 +22,7 @@ updates this file, and commits.
 |---|---|---|---|
 | G1 Foundation | 1 | done | verified 2026-08-17 (incl. auth.login.succeeded audit) |
 | G2 Identity | 2 | done | verified 2026-08-17: add-user/remove-user + authentik sync + default-deny |
-| G3 Domains | 3 | pending | depends on G2 |
+| G3 Domains | 3 | done | verified 2026-08-17: TXT verification, containment, verified hostname gate |
 | G4 Mail (chasquid) | 4 | pending | depends on G3 |
 | G5 Applications | 5 | pending | depends on G4 |
 | G6 Reconciliation | 6 | pending | depends on G5 (worker exists from G1) |
@@ -119,6 +119,15 @@ the user row. Migration 00002 idempotent; full go gate green.
 ---
 
 ## G3 — Domains (Phase 3)
+
+**Status (2026-08-17): VERIFIED — G3 COMPLETE** (`62f4a39`, `181c451`). Domain
+create (IDNA/`Example.COM`→`example.com`, pending + crypto token), verification
+instructions returned (Manual provider, automated=false); real-DNS verify gate
+(422 lookup); hostname binding refused until verified (409) and only within the
+domain (unit-tested look-alike rejections); positive path (verify→bind→delete
+dependents 409) covered by handler test; migration 00003 idempotent (v3).
+Cloudflare provider implemented behind the abstraction (not live-verified — no
+API token here); G6 owns record reconciliation.
 
 **Objective**: domain model, DNS TXT verification (§10–§11), hostname model with proper containment (no naive suffix checks, §12), domain authorization, DNS provider abstraction (Manual + Cloudflare, §88).
 
