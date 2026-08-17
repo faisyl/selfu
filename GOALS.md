@@ -43,6 +43,23 @@ updates this file, and commits.
 
 ## G1 — Phase 1 Foundation
 
+**Status (2026-08-17):** implementation committed (`1fcdcd9`); unit tests / vet / build green. **Not yet verified end-to-end** — resume here:
+
+```
+cd /home/faisal/Work/selfu
+make gen-env                 # fills .env with random secrets (keep values in sync)
+sg docker -c 'docker compose up -d --wait'
+sg docker -c 'docker compose run --rm migrate up'   # run twice: 2nd must be no-op (idempotent)
+curl -fsS http://localhost:8080/api/v1/health       # expect 200 ok
+# OIDC login via browser at http://localhost:9000 (admin@selfu.local + .env password)
+curl -i http://localhost:8080/api/v1/me             # expect 401 unauthenticated
+# psql: SELECT count(*) FROM users; SELECT count(*) FROM audit_events;  # both >= 1 after login
+```
+
+**Resume note:** API uses `network_mode: host`; this layout is valid only until
+Phase 5 introduces Traefik, which must replace it (single public front, internal
+authentik route). Docker group access was granted (`usermod -aG docker faisal`).
+
 **Objective.** Bootstrappable Go project: PostgreSQL schema + migrations, Go domain model, REST API, authentik OIDC platform login, audit logging — wired into a pinned Docker Compose stack (postgres, authentik, api).
 
 **Success criteria (all binary)**
