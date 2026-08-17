@@ -120,14 +120,19 @@ the user row. Migration 00002 idempotent; full go gate green.
 
 ## G3 — Domains (Phase 3)
 
-**Status (2026-08-17): VERIFIED — G3 COMPLETE** (`62f4a39`, `181c451`). Domain
-create (IDNA/`Example.COM`→`example.com`, pending + crypto token), verification
-instructions returned (Manual provider, automated=false); real-DNS verify gate
-(422 lookup); hostname binding refused until verified (409) and only within the
+**Status (2026-08-17): VERIFIED — G3 COMPLETE** (`62f4a39`, `181c451`, provider wiring
+`3e913f9`). Domain create (IDNA/`Example.COM`→`example.com`, pending + crypto token),
+verification instructions returned (Manual provider, automated=false); real-DNS verify
+gate (422 lookup); hostname binding refused until verified (409) and only within the
 domain (unit-tested look-alike rejections); positive path (verify→bind→delete
 dependents 409) covered by handler test; migration 00003 idempotent (v3).
-Cloudflare provider implemented behind the abstraction (not live-verified — no
-API token here); G6 owns record reconciliation.
+**Live Cloudflare validation (2026-08-17):** against a real zone (`pruxi.in`,
+config-gated `SELFU_CLOUDFLARE_*`), the platform auto-created
+`_platform-verification.pruxi.in` TXT (provider `automated:true`), real-DNS
+`verify` returned `verified` on first attempt, `git.pruxi.in` bound (201), an
+out-of-domain hostname rejected (400), and the verification TXT was removed
+(Cloudflare count 0) after verification. Cloudflare provider is now
+live-verified. G6 owns ongoing record reconciliation.
 
 **Objective**: domain model, DNS TXT verification (§10–§11), hostname model with proper containment (no naive suffix checks, §12), domain authorization, DNS provider abstraction (Manual + Cloudflare, §88).
 
