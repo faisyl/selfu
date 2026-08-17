@@ -21,7 +21,7 @@ updates this file, and commits.
 | Goal | Spec phase | Status | Notes |
 |---|---|---|---|
 | G1 Foundation | 1 | done | verified 2026-08-17 (incl. auth.login.succeeded audit) |
-| G2 Identity | 2 | pending | depends on G1 |
+| G2 Identity | 2 | done | verified 2026-08-17: add-user/remove-user + authentik sync + default-deny |
 | G3 Domains | 3 | pending | depends on G2 |
 | G4 Mail (chasquid) | 4 | pending | depends on G3 |
 | G5 Applications | 5 | pending | depends on G4 |
@@ -93,6 +93,15 @@ interactive authentik login (done manually) produced a `users` row
 ---
 
 ## G2 — Identity (Phase 2)
+
+**Status (2026-08-17): VERIFIED — G2 COMPLETE** (`9a544e0`). All criteria held
+live: org/membership/group/user CRUD with owner>admin>member + default-deny
+(non-admin 403); platform user→authentik user (pk int) and platform group→
+authentik group (pk uuid) provisioned with external ids in `external_resources`;
+add-user workflow created user + authentik identity + membership + no mailbox;
+remove-user workflow set platform status=disabled, stripped org+group
+memberships, disabled the authentik identity (`is_active=False`), and retained
+the user row. Migration 00002 idempotent; full go gate green.
 
 **Objective**: authentik integration (admin API), users, organizations, memberships, groups, application authorization model (§4, §15–17, §79–80).
 
