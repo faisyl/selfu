@@ -14,6 +14,7 @@ import (
 	"selfu/internal/auth"
 	"selfu/internal/authentik"
 	"selfu/internal/config"
+	"selfu/internal/dns"
 	"selfu/internal/httpapi"
 	"selfu/internal/store"
 	"selfu/internal/version"
@@ -79,6 +80,9 @@ func run(logger *slog.Logger) error {
 			IdentityStore:  st,
 			Identity:       ak,
 			ProviderName:   cfg.OIDC.Issuer,
+			DomainStore:    st,
+			DNSProvider:    dns.ManualProvider{},
+			TXTLookup:      dns.DefaultTXTLookup,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,

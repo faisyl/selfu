@@ -25,6 +25,14 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /api/v1/users", h.authn(h.listUsers))
 	mux.Handle("POST /api/v1/users/{id}/disable", h.authn(h.disableUser))
 
+	// G3 — domains.
+	mux.Handle("POST /api/v1/organizations/{id}/domains", h.authn(h.createDomain))
+	mux.Handle("GET /api/v1/organizations/{id}/domains", h.authn(h.listDomains))
+	mux.Handle("POST /api/v1/domains/{id}/verify", h.authn(h.verifyDomain))
+	mux.Handle("DELETE /api/v1/domains/{id}", h.authn(h.deleteDomain))
+	mux.Handle("POST /api/v1/domains/{id}/hostnames", h.authn(h.addHostname))
+	mux.Handle("GET /api/v1/domains/{id}/hostnames", h.authn(h.listHostnames))
+
 	var root http.Handler = mux
 	root = accessLog(d.Logger)(root)
 	root = withRecoverer(d.Logger)(root)

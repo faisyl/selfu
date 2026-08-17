@@ -9,9 +9,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// pgxRow is the common row-query interface used by scan helpers.
+type pgxRow = pgx.Row
 
 // Store wraps the PostgreSQL connection pool.
 type Store struct {

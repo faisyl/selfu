@@ -11,6 +11,7 @@ import (
 
 	"selfu/internal/auth"
 	"selfu/internal/config"
+	"selfu/internal/dns"
 	"selfu/internal/domain"
 	"selfu/internal/store"
 	"selfu/internal/version"
@@ -49,6 +50,13 @@ type Deps struct {
 	Identity IdentityClient
 	// ProviderName labels external_resources (the authentik issuer).
 	ProviderName string
+
+	// DomainStore is the domain/hostname persistence surface (G3).
+	DomainStore DomainStore
+	// DNSProvider auto-provisions records (manual by default for v0).
+	DNSProvider dns.Provider
+	// TXTLookup queries TXT records for domain verification.
+	TXTLookup dns.TXTLookup
 }
 
 // Handler serves the REST API and the OIDC login flow.
