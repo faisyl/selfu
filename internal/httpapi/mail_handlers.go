@@ -20,6 +20,7 @@ type MailStore interface {
 	CreateMailDomain(ctx context.Context, domainID string) (domain.MailDomain, error)
 	GetMailDomainByDomainID(ctx context.Context, domainID string) (domain.MailDomain, error)
 	SetMailDomainStatus(ctx context.Context, id, status string) error
+	SetMailDomainDKIM(ctx context.Context, id, selector, record string) error
 
 	CreateMailIdentity(ctx context.Context, m domain.MailIdentity) (domain.MailIdentity, error)
 	GetMailIdentity(ctx context.Context, id string) (domain.MailIdentity, error)
@@ -97,6 +98,14 @@ func (h *Handler) enableMail(w http.ResponseWriter, r *http.Request) {
 	}
 	// New domains require a restart to be registered by chasquid (spec §91).
 	_ = h.d.Chasquid.Restart(r.Context())
+	// Provision DKIM (spec §28, §68): keygen + record for DNS publication.
+	if dk, err := h.d.Chasquid.EnsureDKIM(r.Context(), d.FQDN); err == nil {
+		if err := h.d.MailStore.SetMailDomainDKIM(r.Context(), md.ID, dk.Selector, dk.Record); err != nil {
+			h.d.Logger.Warn("store dkim metadata failed", "err", err)
+		}
+	} else {
+		h.d.Logger.Warn("dkim provisioning failed", "err", err, "domain", d.FQDN)
+	}
 	_ = h.d.MailStore.SetMailDomainStatus(r.Context(), md.ID, "active")
 
 	h.audit(r.Context(), domain.AuditEvent{
@@ -239,12 +248,15 @@ func (h *Handler) createMailIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Sender policy: this credential may only send as its own address
-	// (spec §46, §50).
+	// (spec §46, §50) — enforced by the post-data hook (G4b).
 	_ = h.d.MailStore.CreateMailSubmissionPolicy(r.Context(), domain.MailSubmissionPolicy{
 		MailIdentityID:       ident.ID,
 		CredentialID:         cred.ID,
 		AllowedFromAddresses: []string{addr},
 	})
+	if err := h.d.Chasquid.EnsureSenderPolicy(r.Context(), addr, []string{addr}); err != nil {
+		h.d.Logger.Warn("sender policy install failed", "err", err, "address", addr)
+	}
 	_ = h.d.MailStore.SetMailIdentityStatus(r.Context(), ident.ID, domain.MailIdentityActive)
 
 	h.audit(r.Context(), domain.AuditEvent{

@@ -39,11 +39,19 @@ type ChasquidController interface {
 	RemoveDomain(ctx context.Context, domain string) error
 	EnsureAlias(ctx context.Context, domain, localPart string, destinations []string) error
 	RemoveAlias(ctx context.Context, domain, localPart string) error
+	EnsureSenderPolicy(ctx context.Context, authUser string, allowedFrom []string) error
+	EnsureDKIM(ctx context.Context, domain string) (DKIMInfo, error)
 	Reload(ctx context.Context) error
 	// Restart fully restarts the MTA; required when new domains are
 	// provisioned (spec §91).
 	Restart(ctx context.Context) error
 	Status(ctx context.Context) (ChasquidStatus, error)
+}
+
+// DKIMInfo is a generated DKIM signing key's selector and DNS record.
+type DKIMInfo struct {
+	Selector string
+	Record   string
 }
 
 // ErrUnavailable is returned when no controller is configured.
@@ -97,6 +105,42 @@ func (c *AgentClient) do(ctx context.Context, method, path string, body any) err
 	return nil
 }
 
+// doInto is do() with JSON response decoding.
+func (c *AgentClient) doInto(ctx context.Context, method, path string, body any, out any) error {
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		rdr = strings.NewReader(string(b))
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rdr)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Agent-Token", c.token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("chasquid-agent %s %s: %w", method, path, err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("chasquid-agent %s %s: status %d: %s", method, path, resp.StatusCode, truncate(string(data), 250))
+	}
+	if out != nil && len(data) > 0 {
+		return json.Unmarshal(data, out)
+	}
+	return nil
+}
+
 // AddUser provisions a chasquid user with the given secret.
 func (c *AgentClient) AddUser(ctx context.Context, address string, password Secret) error {
 	return c.do(ctx, http.MethodPost, "/api/v1/user", map[string]string{
@@ -138,6 +182,26 @@ func (c *AgentClient) RemoveAlias(ctx context.Context, domain, localPart string)
 	return c.do(ctx, http.MethodDelete, "/api/v1/alias", map[string]string{
 		"domain": domain, "local": localPart,
 	})
+}
+
+// EnsureSenderPolicy installs the sender-authorization policy for authUser.
+func (c *AgentClient) EnsureSenderPolicy(ctx context.Context, authUser string, allowedFrom []string) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/policy", map[string]any{
+		"address": authUser, "allowed_from_addresses": allowedFrom,
+	})
+}
+
+// EnsureDKIM generates the domain DKIM key and returns its metadata.
+func (c *AgentClient) EnsureDKIM(ctx context.Context, domain string) (DKIMInfo, error) {
+	var out struct {
+		Selector string `json:"selector"`
+		Record   string `json:"record"`
+	}
+	err := c.doInto(ctx, http.MethodPost, "/api/v1/dkim", map[string]string{"domain": domain}, &out)
+	if err != nil {
+		return DKIMInfo{}, err
+	}
+	return DKIMInfo{Selector: out.Selector, Record: out.Record}, nil
 }
 
 // Reload asks chasquid to reload its configuration.

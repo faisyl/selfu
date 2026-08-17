@@ -43,6 +43,16 @@ func (s *Store) SetMailDomainStatus(ctx context.Context, id, status string) erro
 	return nil
 }
 
+// SetMailDomainDKIM stores the DKIM selector + DNS record and marks the
+// domain's DKIM status configured (spec §28, §68).
+func (s *Store) SetMailDomainDKIM(ctx context.Context, id, selector, record string) error {
+	_, err := s.pool.Exec(ctx, setMailDomainDKIMSQL, selector, record, id)
+	if err != nil {
+		return fmt.Errorf("set mail domain dkim: %w", err)
+	}
+	return nil
+}
+
 // CreateMailIdentity inserts a mail identity (default status provisioning).
 func (s *Store) CreateMailIdentity(ctx context.Context, m domain.MailIdentity) (domain.MailIdentity, error) {
 	if m.ID == "" {
@@ -234,6 +244,8 @@ SELECT id, domain_id, status, inbound_status, outbound_status, tls_status, dkim_
 FROM mail_domains WHERE domain_id = $1`
 
 const setMailDomainStatusSQL = `UPDATE mail_domains SET status = $1, updated_at = now() WHERE id = $2`
+
+const setMailDomainDKIMSQL = `UPDATE mail_domains SET dkim_selector = $1, dkim_dns_record = $2, dkim_status = 'configured', updated_at = now() WHERE id = $3`
 
 const insertMailIdentitySQL = `
 INSERT INTO mail_identities (id, organization_id, user_id, domain_id, local_part, address, chasquid_username)

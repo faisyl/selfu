@@ -1,7 +1,8 @@
 #!/bin/sh
-# chasquid entrypoint (platform-managed): starts the MTA in the background
-# and then the admin sidecar in the foreground. The MTA's configuration is
-# generated platform state under /etc/chasquid (spec §60).
+# chasquid entrypoint (platform-managed): generates the configuration
+# (spec §60), supervises the MTA (restarting it on exit — e.g. after the
+# sidecar requests a restart for new-domain registration, §91), then runs
+# the sidecar in the foreground.
 set -e
 
 hostname="${CHASQUID_HOSTNAME:-mail.local}"
@@ -21,13 +22,6 @@ EOF
 }
 
 mkdir -p /etc/chasquid/certs /etc/chasquid/domains /data/spool
-# chasquid v1.17 exits if domains/ is empty. Seed a placeholder local
-# domain (the MTA hostname, no users); real domains are provisioned by the
-# platform alongside it.
-if [ -z "$(ls -A /etc/chasquid/domains 2>/dev/null)" ]; then
-  mkdir -p "/etc/chasquid/domains/$hostname"
-  touch "/etc/chasquid/domains/$hostname/users" "/etc/chasquid/domains/$hostname/aliases"
-fi
 # Development TLS: a self-signed pair per hostname (certbot layout,
 # spec §52). Production replaces this via real certificates.
 cdir="/etc/chasquid/certs/$hostname"
@@ -38,9 +32,22 @@ if [ ! -f "$cdir/fullchain.pem" ] && command -v openssl >/dev/null 2>&1; then
     -out "$cdir/fullchain.pem" \
     -subj "/CN=$hostname" >/dev/null 2>&1
 fi
+# chasquid v1.17 exits if domains/ is empty. Seed a placeholder local
+# domain (the MTA hostname, no users); real domains are provisioned by the
+# platform alongside it.
+if [ -z "$(ls -A /etc/chasquid/domains 2>/dev/null)" ]; then
+  mkdir -p "/etc/chasquid/domains/$hostname"
+  touch "/etc/chasquid/domains/$hostname/users" "/etc/chasquid/domains/$hostname/aliases"
+fi
 render_config
 
-# Start the MTA, then the sidecar.
-exec /usr/local/bin/chasquid -config_dir /etc/chasquid &
-sleep 1
+# Supervisor loop: keep chasquid running; restart whenever it exits.
+(
+  while true; do
+    /usr/local/bin/chasquid -config_dir /etc/chasquid &
+    wait "$!"
+    sleep 2
+  done
+) &
+
 exec /usr/local/bin/chasquid-agent
