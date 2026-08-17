@@ -96,6 +96,12 @@ func router(t *testing.T, h *Handler) http.Handler {
 		Audit:          h.d.Audit,
 		OIDCConfig:     h.d.OIDCConfig,
 		AfterLoginPath: h.d.AfterLoginPath,
+		IdentityStore:  h.d.IdentityStore,
+		Identity:       h.d.Identity,
+		ProviderName:   h.d.ProviderName,
+		DomainStore:    h.d.DomainStore,
+		DNSProvider:    h.d.DNSProvider,
+		TXTLookup:      h.d.TXTLookup,
 	})
 }
 
