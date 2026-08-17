@@ -34,6 +34,8 @@ type MailStore interface {
 	CreateMailAlias(ctx context.Context, a domain.MailAlias) (domain.MailAlias, error)
 	GetMailAliasByAddress(ctx context.Context, address string) (domain.MailAlias, error)
 	ListMailAliasesByDomain(ctx context.Context, domainID string) ([]domain.MailAlias, error)
+	UpdateMailAliasDestinations(ctx context.Context, id string, destinations []string) error
+	ListMailIdentitiesByUsers(ctx context.Context, orgID string, userIDs []string) ([]domain.MailIdentity, error)
 	DeleteMailAlias(ctx context.Context, id string) error
 
 	CreateMailSubmissionPolicy(ctx context.Context, p domain.MailSubmissionPolicy) error
@@ -173,6 +175,35 @@ func (h *Handler) reconcileMail(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, a := range aliases {
 		if a.Status != "active" {
+			continue
+		}
+		// Group-bound aliases: recompute destinations from the group's
+		// active identities (spec §42–43).
+		if a.GroupID != nil {
+			members, err := h.d.IdentityStore.ListGroupMembers(r.Context(), *a.GroupID)
+			if err != nil {
+				continue
+			}
+			userIDs := make([]string, 0, len(members))
+			for _, m := range members {
+				userIDs = append(userIDs, m.UserID)
+			}
+			identities, err := h.d.MailStore.ListMailIdentitiesByUsers(r.Context(), d.OrganizationID, userIDs)
+			if err != nil {
+				continue
+			}
+			var dests []string
+			for _, idn := range identities {
+				dests = append(dests, idn.Address)
+			}
+			if err := h.d.MailStore.UpdateMailAliasDestinations(r.Context(), a.ID, dests); err != nil {
+				h.d.Logger.Warn("update group alias destinations failed", "err", err, "alias", a.Address)
+			}
+			if err := h.d.Chasquid.EnsureAlias(r.Context(), d.FQDN, a.LocalPart, dests); err != nil {
+				h.d.Logger.Warn("group alias reconcile failed", "err", err, "address", a.Address)
+				continue
+			}
+			aliasesRestored++
 			continue
 		}
 		if err := h.d.Chasquid.EnsureAlias(r.Context(), d.FQDN, a.LocalPart, a.Destinations); err != nil {
@@ -423,9 +454,11 @@ func (h *Handler) listMailIdentities(w http.ResponseWriter, r *http.Request) {
 type createMailAliasReq struct {
 	LocalPart    string   `json:"local_part"`
 	Destinations []string `json:"destinations"`
+	GroupID      *string  `json:"group_id"`
 }
 
-// createMailAlias enforces same-organization routing by default (spec §39).
+// createMailAlias enforces same-organization routing by default (spec §39)
+// and supports group-bound aliases (§42–43).
 func (h *Handler) createMailAlias(w http.ResponseWriter, r *http.Request) {
 	d, err := h.d.DomainStore.GetDomainByID(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -440,7 +473,34 @@ func (h *Handler) createMailAlias(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if len(req.Destinations) == 0 {
+	// Group-bound aliases derive destinations from the members' active
+	// identities (spec §42); the set is recomputed on reconciliation.
+	if req.GroupID != nil {
+		g, err := h.d.IdentityStore.GetGroupByID(r.Context(), *req.GroupID)
+		if err != nil || g.OrganizationID != d.OrganizationID {
+			writeError(w, http.StatusBadRequest, "invalid_group", "group does not belong to this organization")
+			return
+		}
+		members, err := h.d.IdentityStore.ListGroupMembers(r.Context(), *req.GroupID)
+		if err != nil {
+			h.internalError(w, err)
+			return
+		}
+		userIDs := make([]string, 0, len(members))
+		for _, m := range members {
+			userIDs = append(userIDs, m.UserID)
+		}
+		identities, err := h.d.MailStore.ListMailIdentitiesByUsers(r.Context(), d.OrganizationID, userIDs)
+		if err != nil {
+			h.internalError(w, err)
+			return
+		}
+		req.Destinations = nil
+		for _, idn := range identities {
+			req.Destinations = append(req.Destinations, idn.Address)
+		}
+	}
+	if len(req.Destinations) == 0 && req.GroupID == nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "at least one destination is required")
 		return
 	}
@@ -470,6 +530,7 @@ func (h *Handler) createMailAlias(w http.ResponseWriter, r *http.Request) {
 	alias, err := h.d.MailStore.CreateMailAlias(r.Context(), domain.MailAlias{
 		OrganizationID: d.OrganizationID,
 		DomainID:       d.ID,
+		GroupID:        req.GroupID,
 		LocalPart:      strings.Split(addr, "@")[0],
 		Address:        addr,
 		Destinations:   req.Destinations,

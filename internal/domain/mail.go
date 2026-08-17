@@ -88,11 +88,13 @@ type MailIdentity struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// MailAlias forwards an address to destinations (spec §37).
+// MailAlias forwards an address to destinations (spec §37); a group-bound
+// alias derives destinations from the group's active identities (§42–43).
 type MailAlias struct {
 	ID             string    `json:"id"`
 	OrganizationID string    `json:"organization_id"`
 	DomainID       string    `json:"domain_id"`
+	GroupID        *string   `json:"group_id,omitempty"`
 	LocalPart      string    `json:"local_part"`
 	Address        string    `json:"address"`
 	Destinations   []string  `json:"destinations"`

@@ -141,15 +141,15 @@ func (s *Store) RevokeCredentialsByIdentity(ctx context.Context, identityID stri
 	return nil
 }
 
-// CreateMailAlias inserts an alias (spec §37).
+// CreateMailAlias inserts an alias (spec §37), optionally group-bound (§42).
 func (s *Store) CreateMailAlias(ctx context.Context, a domain.MailAlias) (domain.MailAlias, error) {
 	if a.ID == "" {
 		a.ID = uuid.NewString()
 	}
 	dests, _ := json.Marshal(a.Destinations)
 	err := s.pool.QueryRow(ctx, insertMailAliasSQL,
-		a.ID, a.OrganizationID, a.DomainID, a.LocalPart, a.Address, dests).
-		Scan(&a.ID, &a.OrganizationID, &a.DomainID, &a.LocalPart, &a.Address, &dests, &a.Status, &a.CreatedAt, &a.UpdatedAt)
+		a.ID, a.OrganizationID, a.DomainID, a.GroupID, a.LocalPart, a.Address, dests).
+		Scan(&a.ID, &a.OrganizationID, &a.DomainID, &a.GroupID, &a.LocalPart, &a.Address, &dests, &a.Status, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		if isUnique(err) {
 			return domain.MailAlias{}, ErrConflict
@@ -158,6 +158,38 @@ func (s *Store) CreateMailAlias(ctx context.Context, a domain.MailAlias) (domain
 	}
 	_ = json.Unmarshal(dests, &a.Destinations)
 	return a, nil
+}
+
+// UpdateMailAliasDestinations refreshes an alias's destination set.
+func (s *Store) UpdateMailAliasDestinations(ctx context.Context, id string, destinations []string) error {
+	dests, _ := json.Marshal(destinations)
+	_, err := s.pool.Exec(ctx, updateMailAliasDestsSQL, dests, id)
+	if err != nil {
+		return fmt.Errorf("update mail alias destinations: %w", err)
+	}
+	return nil
+}
+
+// ListMailIdentitiesByUsers returns the ACTIVE mail identities of the given
+// users within an organization (used for group aliases, §42–43).
+func (s *Store) ListMailIdentitiesByUsers(ctx context.Context, orgID string, userIDs []string) ([]domain.MailIdentity, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx, listMailIdentitiesByUsersSQL, orgID, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.MailIdentity
+	for rows.Next() {
+		var m domain.MailIdentity
+		if err := scanMailIdentity(rows, &m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 // GetMailAliasByAddress returns an alias by full address (used for
@@ -229,7 +261,7 @@ func scanMailIdentity(row pgxRow, m *domain.MailIdentity) error {
 
 func scanMailAlias(row pgxRow, a *domain.MailAlias) error {
 	var dests []byte
-	if err := row.Scan(&a.ID, &a.OrganizationID, &a.DomainID, &a.LocalPart, &a.Address, &dests, &a.Status, &a.CreatedAt, &a.UpdatedAt); err != nil {
+	if err := row.Scan(&a.ID, &a.OrganizationID, &a.DomainID, &a.GroupID, &a.LocalPart, &a.Address, &dests, &a.Status, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return err
 	}
 	return json.Unmarshal(dests, &a.Destinations)
@@ -274,17 +306,26 @@ const revokeCredentialsSQL = `
 UPDATE mail_credentials SET status = 'revoked', rotated_at = now() WHERE mail_identity_id = $1 AND status = 'active'`
 
 const insertMailAliasSQL = `
-INSERT INTO mail_aliases (id, organization_id, domain_id, local_part, address, destinations)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, organization_id, domain_id, local_part, address, destinations, status, created_at, updated_at`
+INSERT INTO mail_aliases (id, organization_id, domain_id, group_id, local_part, address, destinations)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, organization_id, domain_id, group_id, local_part, address, destinations, status, created_at, updated_at`
 
 const mailAliasByAddressSQL = `
-SELECT id, organization_id, domain_id, local_part, address, destinations, status, created_at, updated_at
+SELECT id, organization_id, domain_id, group_id, local_part, address, destinations, status, created_at, updated_at
 FROM mail_aliases WHERE address = $1`
 
 const listMailAliasesSQL = `
-SELECT id, organization_id, domain_id, local_part, address, destinations, status, created_at, updated_at
+SELECT id, organization_id, domain_id, group_id, local_part, address, destinations, status, created_at, updated_at
 FROM mail_aliases WHERE domain_id = $1 ORDER BY address`
+
+const updateMailAliasDestsSQL = `
+UPDATE mail_aliases SET destinations = $1, updated_at = now() WHERE id = $2`
+
+const listMailIdentitiesByUsersSQL = `
+SELECT id, organization_id, user_id, domain_id, local_part, address, chasquid_username, status, created_at, updated_at
+FROM mail_identities
+WHERE organization_id = $1 AND user_id = ANY($2::uuid[]) AND status = 'active'
+ORDER BY address`
 
 const deleteMailAliasSQL = `DELETE FROM mail_aliases WHERE id = $1`
 
