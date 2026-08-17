@@ -137,8 +137,92 @@ func (h *Handler) mailStatus(w http.ResponseWriter, r *http.Request) {
 		if st, err := h.d.Chasquid.Status(r.Context()); err == nil {
 			resp["chasquid_health"] = st
 		}
+		if state, err := h.d.Chasquid.CheckDomain(r.Context(), d.FQDN); err == nil {
+			resp["chasquid_domain"] = state
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// reconcileMail conservatively re-aligns desired vs observed chasquid state
+// (spec §92): aliases are restored; missing users are flagged (never
+// re-created — credentials are stored as fingerprints only).
+func (h *Handler) reconcileMail(w http.ResponseWriter, r *http.Request) {
+	d, err := h.d.DomainStore.GetDomainByID(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "domain not found")
+		return
+	}
+	if !h.requireOrgRole(w, r, d.OrganizationID, domain.RoleAdmin) {
+		return
+	}
+	if _, err := h.d.MailStore.GetMailDomainByDomainID(r.Context(), d.ID); err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "mail not enabled for this domain")
+		return
+	}
+	if h.d.Chasquid == nil {
+		writeError(w, http.StatusUnprocessableEntity, "mail_unavailable", "mail provisioning is not configured")
+		return
+	}
+
+	aliasesRestored := 0
+	aliases, err := h.d.MailStore.ListMailAliasesByDomain(r.Context(), d.ID)
+	if err != nil {
+		h.internalError(w, err)
+		return
+	}
+	for _, a := range aliases {
+		if a.Status != "active" {
+			continue
+		}
+		if err := h.d.Chasquid.EnsureAlias(r.Context(), d.FQDN, a.LocalPart, a.Destinations); err != nil {
+			h.d.Logger.Warn("alias reconcile failed", "err", err, "address", a.Address)
+			continue
+		}
+		aliasesRestored++
+	}
+	_ = h.d.Chasquid.Reload(r.Context())
+
+	missingUsers := []string{}
+	identities, err := h.d.MailStore.ListMailIdentitiesByDomain(r.Context(), d.ID)
+	if err != nil {
+		h.internalError(w, err)
+		return
+	}
+	for _, idn := range identities {
+		if idn.Status != domain.MailIdentityActive {
+			continue
+		}
+		ok, err := h.d.Chasquid.UserExists(r.Context(), idn.Address)
+		if err != nil {
+			continue
+		}
+		if !ok {
+			missingUsers = append(missingUsers, idn.Address)
+			_ = h.d.MailStore.SetMailIdentityStatus(r.Context(), idn.ID, domain.MailIdentitySuspended)
+			h.audit(r.Context(), domain.AuditEvent{
+				ActorUserID:  new(rUser(r).ID),
+				Action:       "mail.identity.reconciliation_failed",
+				ResourceType: "mail_identity",
+				ResourceID:   idn.ID,
+				Details:      map[string]any{"address": idn.Address, "reason": "chasquid user missing"},
+			})
+		}
+	}
+
+	h.audit(r.Context(), domain.AuditEvent{
+		ActorUserID:  new(rUser(r).ID),
+		Action:       "mail.reconciliation",
+		ResourceType: "domain",
+		ResourceID:   d.ID,
+		Details:      map[string]any{"aliases_restored": aliasesRestored, "identities_missing": len(missingUsers)},
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"domain_id":          d.ID,
+		"aliases_restored":   aliasesRestored,
+		"identities_missing": missingUsers,
+		"note":               "missing identities are suspended, never recreated (spec §92)",
+	})
 }
 
 func (h *Handler) disableMail(w http.ResponseWriter, r *http.Request) {

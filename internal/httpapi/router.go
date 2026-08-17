@@ -37,6 +37,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/v1/domains/{id}/mail", h.authn(h.enableMail))
 	mux.Handle("GET /api/v1/domains/{id}/mail", h.authn(h.mailStatus))
 	mux.Handle("DELETE /api/v1/domains/{id}/mail", h.authn(h.disableMail))
+	mux.Handle("POST /api/v1/domains/{id}/mail/reconcile", h.authn(h.reconcileMail))
 	mux.Handle("POST /api/v1/domains/{id}/mail-identities", h.authn(h.createMailIdentity))
 	mux.Handle("GET /api/v1/domains/{id}/mail-identities", h.authn(h.listMailIdentities))
 	mux.Handle("POST /api/v1/mail-identities/{id}/credentials/rotate", h.authn(h.rotateMailCredential))

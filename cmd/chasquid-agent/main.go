@@ -46,6 +46,8 @@ func main() {
 	mux.HandleFunc("DELETE /api/v1/alias", a.handleRemoveAlias)
 	mux.HandleFunc("POST /api/v1/policy", a.handleEnsurePolicy)
 	mux.HandleFunc("POST /api/v1/dkim", a.handleEnsureDKIM)
+	mux.HandleFunc("POST /api/v1/domain/check", a.handleCheckDomain)
+	mux.HandleFunc("POST /api/v1/user/exists", a.handleUserExists)
 	mux.HandleFunc("POST /api/v1/reload", a.handleReload)
 	mux.HandleFunc("POST /api/v1/restart", a.handleRestart)
 
@@ -221,6 +223,62 @@ func (a *agent) handleEnsurePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOK(w, map[string]any{"ok": true})
+}
+
+// handleCheckDomain reports the observed chasquid state for a domain
+// (spec §66, §92): users/aliases counts parsed from chasquid's own tools.
+func (a *agent) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
+	var in req
+	if !readReq(w, r, &in) || in.Domain == "" {
+		return
+	}
+	users := 0
+	if out, err := a.utilCmd(r.Context(), "check-userdb", in.Domain).Output(); err == nil {
+		if _, err := fmt.Sscanf(string(out), "Database loaded (%d users)", &users); err != nil {
+			users = 0
+		}
+	}
+	aliases := 0
+	if b, err := os.ReadFile(filepath.Join(a.conf, "domains", in.Domain, "aliases")); err == nil {
+		for _, ln := range strings.Split(string(b), "\n") {
+			if strings.TrimSpace(ln) != "" {
+				aliases++
+			}
+		}
+	}
+	exists := false
+	if _, err := os.Stat(filepath.Join(a.conf, "domains", in.Domain)); err == nil {
+		exists = true
+	}
+	writeOK(w, map[string]any{"exists": exists, "users": users, "aliases": aliases})
+}
+
+// handleUserExists reports whether a local user exists in the domain's
+// userdb (by the documented `key: "<local>"` entries chasquid-util writes).
+func (a *agent) handleUserExists(w http.ResponseWriter, r *http.Request) {
+	var in req
+	if !readReq(w, r, &in) || in.Address == "" {
+		return
+	}
+	local, _, ok := strings.Cut(in.Address, "@")
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "address must be user@domain")
+		return
+	}
+	b, err := os.ReadFile(filepath.Join(a.conf, "domains", strings.Split(in.Address, "@")[1], "users"))
+	if err != nil {
+		writeOK(w, map[string]any{"exists": false})
+		return
+	}
+	exists := false
+	for _, ln := range strings.Split(string(b), "\n") {
+		key, rest, ok := strings.Cut(ln, ":")
+		if ok && strings.TrimSpace(key) == "key" && strings.Contains(rest, `"`+local+`"`) {
+			exists = true
+			break
+		}
+	}
+	writeOK(w, map[string]any{"exists": exists})
 }
 
 // handleEnsureDKIM generates (once) the domain's DKIM signing key and

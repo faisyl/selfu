@@ -41,6 +41,8 @@ type ChasquidController interface {
 	RemoveAlias(ctx context.Context, domain, localPart string) error
 	EnsureSenderPolicy(ctx context.Context, authUser string, allowedFrom []string) error
 	EnsureDKIM(ctx context.Context, domain string) (DKIMInfo, error)
+	CheckDomain(ctx context.Context, domain string) (DomainState, error)
+	UserExists(ctx context.Context, address string) (bool, error)
 	Reload(ctx context.Context) error
 	// Restart fully restarts the MTA; required when new domains are
 	// provisioned (spec §91).
@@ -52,6 +54,13 @@ type ChasquidController interface {
 type DKIMInfo struct {
 	Selector string
 	Record   string
+}
+
+// DomainState is the observed chasquid state for a domain (spec §66).
+type DomainState struct {
+	Exists  bool
+	Users   int
+	Aliases int
 }
 
 // ErrUnavailable is returned when no controller is configured.
@@ -202,6 +211,32 @@ func (c *AgentClient) EnsureDKIM(ctx context.Context, domain string) (DKIMInfo, 
 		return DKIMInfo{}, err
 	}
 	return DKIMInfo{Selector: out.Selector, Record: out.Record}, nil
+}
+
+// CheckDomain returns observed chasquid state for a domain.
+func (c *AgentClient) CheckDomain(ctx context.Context, domain string) (DomainState, error) {
+	var out struct {
+		Exists  bool `json:"exists"`
+		Users   int  `json:"users"`
+		Aliases int  `json:"aliases"`
+	}
+	err := c.doInto(ctx, http.MethodPost, "/api/v1/domain/check", map[string]string{"domain": domain}, &out)
+	if err != nil {
+		return DomainState{}, err
+	}
+	return DomainState{Exists: out.Exists, Users: out.Users, Aliases: out.Aliases}, nil
+}
+
+// UserExists reports whether a local user exists in the domain userdb.
+func (c *AgentClient) UserExists(ctx context.Context, address string) (bool, error) {
+	var out struct {
+		Exists bool `json:"exists"`
+	}
+	err := c.doInto(ctx, http.MethodPost, "/api/v1/user/exists", map[string]string{"address": address}, &out)
+	if err != nil {
+		return false, err
+	}
+	return out.Exists, nil
 }
 
 // Reload asks chasquid to reload its configuration.
