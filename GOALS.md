@@ -191,11 +191,14 @@ yeah-check; per-app authentik OIDC provider+application (unique client creds,
 (`notifications-<id>@pruxi.in`) with unique credential + policy — **SMTP AUTH
 OK**; pure Compose renderer (project name from platform id, §20) unit-tested.
 
-**G5b — remaining (tracked):** Traefik route generation (labels) + Traefik
-compose service; forward-auth provisioning (§83); the Docker Compose
-deployment provider that actually runs `docker compose up` per isolated
-project (worker/G6 owns it; API container has no docker socket); catalog UI
-(Phase 7); deployment events table.
+**G5b — remaining (tracked):** Traefik route generation (§18, closed label set +
+forward-auth middleware, unit-tested) is DONE (`0f8a2cc`); forward-auth provider
+provisioning (§83) DONE + verified live (proxy provider pk 4, forward_single,
+`https://wiki.pruxi.in`). STILL OPEN, relocated to later goals: the Docker
+Compose deployment provider that runs `docker compose up` per isolated project
+(worker / G6 owns it — the API container has no docker socket), the Traefik
+runtime service bring-up (move API off `network_mode: host` to a single public
+front), the catalog UI (G7), and the deployment-events table (G6).
 
 **Objective**: declarative catalog (§13, no arbitrary compose/traefik fragments — §18), manifest validator, compose renderer, docker: Compose deployment provider (isolated per-instance projects, §20), Traefik route generation, authentik OIDC provider + forward-auth (§83), app SMTP identity + unique credential + sender policy (§44–46, §70–73).
 
