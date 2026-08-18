@@ -24,7 +24,7 @@ updates this file, and commits.
 | G2 Identity | 2 | done | verified 2026-08-17: add-user/remove-user + authentik sync + default-deny |
 | G3 Domains | 3 | done | verified 2026-08-17: TXT verification, containment, verified hostname gate |
 | G4a Mail core (chasquid) | 4 | done | verified 2026-08-17: real SMTP AUTH + alias + rotate |
-| G5 Applications | 5 | pending | depends on G4 |
+| G5a Applications core | 5 | done | verified 2026-08-18: catalog, install, OIDC+app SMTP live |
 | G6 Reconciliation | 6 | pending | depends on G5 (worker exists from G1) |
 | G7 UI | 7 | pending | depends on G6 |
 | G8 Acceptance & hardening | v0 | pending | depends on G7 |
@@ -182,6 +182,20 @@ ChasquidProvider assembly (§58) is folded into G4b.
 ---
 
 ## G5 — Applications (Phase 5)
+
+**Status (2026-08-18): G5a DONE (`50abc57`), G5b OPEN.** Verified live: strict
+catalog manifest (unknown fields rejected, §13/§18) + gitea built-in; instance
+install (`cloud.pruxi.in`/`photos.pruxi.in`) with hostname-in-verified-domain
+yeah-check; per-app authentik OIDC provider+application (unique client creds,
+`matching_mode`=regex) with correct `external_resources` ids; app SMTP identity
+(`notifications-<id>@pruxi.in`) with unique credential + policy — **SMTP AUTH
+OK**; pure Compose renderer (project name from platform id, §20) unit-tested.
+
+**G5b — remaining (tracked):** Traefik route generation (labels) + Traefik
+compose service; forward-auth provisioning (§83); the Docker Compose
+deployment provider that actually runs `docker compose up` per isolated
+project (worker/G6 owns it; API container has no docker socket); catalog UI
+(Phase 7); deployment events table.
 
 **Objective**: declarative catalog (§13, no arbitrary compose/traefik fragments — §18), manifest validator, compose renderer, docker: Compose deployment provider (isolated per-instance projects, §20), Traefik route generation, authentik OIDC provider + forward-auth (§83), app SMTP identity + unique credential + sender policy (§44–46, §70–73).
 
