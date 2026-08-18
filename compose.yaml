@@ -1,13 +1,38 @@
-# selfu platform — Phase 1 stack: database, authentik (identity),
-# platform API. Traefik ingress arrives with Phase 5; chasquid with
-# Phase 4. No image uses `latest` (spec §89).
+# selfu platform — production compose stack.
+# Public edge: Traefik on 80/443 (ACME DNS-01 via Cloudflare). Everything
+# else is internal only, on the compose network. SMTP stays directly on
+# 25/587 (spec §53 — never through Traefik). No image uses `latest` (§89).
 #
-# The API runs on the host network: in this layout authentik's issuer
-# (http://localhost:9000) must be resolvable by both the browser and the
-# API container. Phase 5 replaces this with a single Traefik front.
+# Start with:  cp .env.template .env && make gen-env  (then edit PUBLIC_IP /
+#              ACME_EMAIL / hostnames),  docker compose up -d --wait.
 name: selfu
 
 services:
+  traefik:
+    image: traefik:v3.7.10
+    restart: unless-stopped
+    command:
+      - "--providers.file.directory=/etc/traefik"
+      - "--providers.file.watch=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:?set in .env}"
+      - "--certificatesresolvers.le.acme.storage=/etc/traefik-data/acme.json"
+      - "--certificatesresolvers.le.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53"
+    environment:
+      CLOUDFLARE_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      PLATFORM_HOST: ${PLATFORM_HOST:?set in .env}
+      AUTH_HOST: ${AUTH_HOST:?set in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/traefik:/etc/traefik
+      - traefik-data:/etc/traefik-data
+
   db:
     image: postgres:17.5-alpine
     restart: unless-stopped
@@ -18,9 +43,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db-init:/docker-entrypoint-initdb.d:ro
-    ports:
-      # API runs on host network (browser/API share localhost issuer).
-      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d selfu"]
       interval: 5s
@@ -43,7 +65,7 @@ services:
     command: ["server"]
     environment: &authentik-env
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?set in .env}
-      AUTHENTIK_HOST: ${AUTHENTIK_HOST:?set in .env}
+      AUTHENTIK_HOST: https://${AUTH_HOST:?set in .env}
       AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:?set in .env}
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?set in .env}
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?set in .env}
@@ -54,9 +76,6 @@ services:
       AUTHENTIK_REDIS__HOST: redis
       AUTHENTIK_LOG_LEVEL: info
       AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
-    ports:
-      - "9000:9000"
-      - "9443:9443"
     volumes:
       - ak-media:/media
       - ak-templates:/templates
@@ -96,14 +115,16 @@ services:
     restart: "no"
     entrypoint: ["/usr/local/bin/authentik-bootstrap"]
     environment:
-      AUTHENTIK_BASE_URL: http://localhost:9000
+      AUTHENTIK_BASE_URL: https://${AUTH_HOST}
       AUTHENTIK_TLS_INSECURE: "false"
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
       SELFU_OIDC_CLIENT_ID: ${SELFU_OIDC_CLIENT_ID}
       SELFU_OIDC_CLIENT_SECRET: ${SELFU_OIDC_CLIENT_SECRET}
-      SELFU_OIDC_REDIRECT_URL: ${SELFU_OIDC_REDIRECT_URL}
+      SELFU_OIDC_REDIRECT_URL: https://${PLATFORM_HOST}/api/v1/auth/callback
       SELFU_OIDC_SLUG: selfu
-    network_mode: host
+    extra_hosts:
+      - "${AUTH_HOST}:host-gateway"
+      - "${PLATFORM_HOST}:host-gateway"
     depends_on:
       authentik-server:
         condition: service_healthy
@@ -115,11 +136,10 @@ services:
     restart: unless-stopped
     environment:
       CHASQUID_AGENT_TOKEN: ${CHASQUID_AGENT_TOKEN:?set in .env}
-      CHASQUID_HOSTNAME: ${CHASQUID_HOSTNAME:-mail.local}
+      CHASQUID_HOSTNAME: ${MAIL_HOST:-mail.local}
     ports:
       - "25:25"
       - "587:587"
-      - "127.0.0.1:8530:8530"   # chasquid-agent, host-local only
     volumes:
       - chasquid-etc:/etc/chasquid
       - chasquid-data:/data
@@ -129,19 +149,21 @@ services:
     restart: unless-stopped
     entrypoint: ["/usr/local/bin/worker"]
     environment:
-      SELFU_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/selfu
+      SELFU_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/selfu
       SELFU_SESSION_SECRET: ${SELFU_SESSION_SECRET:?set in .env}
       SELFU_OIDC_CLIENT_ID: ${SELFU_OIDC_CLIENT_ID:?set in .env}
       SELFU_OIDC_CLIENT_SECRET: ${SELFU_OIDC_CLIENT_SECRET:?set in .env}
-      SELFU_OIDC_ISSUER: ${AUTHENTIK_HOST}${SELFU_OIDC_ISSUER_PATH:-/application/o/selfu/}
-      SELFU_OIDC_REDIRECT_URL: ${SELFU_OIDC_REDIRECT_URL:?set in .env}
-      SELFU_AUTHENTIK_URL: ${AUTHENTIK_HOST}
+      SELFU_OIDC_ISSUER: https://${AUTH_HOST}/application/o/selfu/
+      SELFU_OIDC_REDIRECT_URL: https://${PLATFORM_HOST}/api/v1/auth/callback
+      SELFU_AUTHENTIK_URL: https://${AUTH_HOST}
       SELFU_AUTHENTIK_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
-      SELFU_CHASQUID_AGENT_URL: http://127.0.0.1:8530
+      SELFU_CHASQUID_AGENT_URL: http://chasquid:8530
       SELFU_CHASQUID_AGENT_TOKEN: ${CHASQUID_AGENT_TOKEN:-}
       SELFU_RECONCILE_INTERVAL: ${SELFU_RECONCILE_INTERVAL:-30}
-      SELFU_OIDC_TLS_INSECURE: "true"
-    network_mode: host
+      SELFU_OIDC_TLS_INSECURE: "false"
+    extra_hosts:
+      - "${AUTH_HOST}:host-gateway"
+      - "${PLATFORM_HOST}:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -152,24 +174,26 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      SELFU_HTTP_ADDR: ":18080"
-      SELFU_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/selfu
+      SELFU_HTTP_ADDR: ":8080"
+      SELFU_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/selfu
       SELFU_SESSION_SECRET: ${SELFU_SESSION_SECRET:?set in .env}
       SELFU_SESSION_TTL: "12h"
-      SELFU_COOKIE_SECURE: "false"
+      SELFU_COOKIE_SECURE: "true"
       SELFU_OIDC_CLIENT_ID: ${SELFU_OIDC_CLIENT_ID:?set in .env}
       SELFU_OIDC_CLIENT_SECRET: ${SELFU_OIDC_CLIENT_SECRET:?set in .env}
-      SELFU_OIDC_ISSUER: ${AUTHENTIK_HOST}${SELFU_OIDC_ISSUER_PATH:-/application/o/selfu/}
-      SELFU_OIDC_REDIRECT_URL: ${SELFU_OIDC_REDIRECT_URL:?set in .env}
-      SELFU_OIDC_TLS_INSECURE: "true"
-      SELFU_AUTHENTIK_URL: ${AUTHENTIK_HOST}
+      SELFU_OIDC_ISSUER: https://${AUTH_HOST}/application/o/selfu/
+      SELFU_OIDC_REDIRECT_URL: https://${PLATFORM_HOST}/api/v1/auth/callback
+      SELFU_OIDC_TLS_INSECURE: "false"
+      SELFU_AUTHENTIK_URL: https://${AUTH_HOST}
       SELFU_AUTHENTIK_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      SELFU_CHASQUID_AGENT_URL: http://chasquid:8530
+      SELFU_CHASQUID_AGENT_TOKEN: ${CHASQUID_AGENT_TOKEN:-}
       SELFU_CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       SELFU_CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
-      SELFU_CHASQUID_AGENT_URL: http://127.0.0.1:8530
-      SELFU_CHASQUID_AGENT_TOKEN: ${CHASQUID_AGENT_TOKEN:-}
       SELFU_AFTER_LOGIN_PATH: /
-    network_mode: host
+    extra_hosts:
+      - "${AUTH_HOST}:host-gateway"
+      - "${PLATFORM_HOST}:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -177,6 +201,8 @@ services:
         condition: service_completed_successfully
       authentik-bootstrap:
         condition: service_completed_successfully
+      traefik:
+        condition: service_started
 
 volumes:
   pgdata:
@@ -184,3 +210,4 @@ volumes:
   ak-templates:
   chasquid-etc:
   chasquid-data:
+  traefik-data:

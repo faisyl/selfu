@@ -1,0 +1,22 @@
+# Traefik dynamic configuration (rendered from this template; env from compose).
+http:
+  routers:
+    platform:
+      rule: "Host(`{{ env "PLATFORM_HOST" }}`)"
+      service: platform
+      tls:
+        certResolver: le
+    authentik:
+      rule: "Host(`{{ env "AUTH_HOST" }}`)"
+      service: authentik
+      tls:
+        certResolver: le
+  services:
+    platform:
+      loadBalancer:
+        servers:
+          - url: "http://api:8080"
+    authentik:
+      loadBalancer:
+        servers:
+          - url: "http://authentik-server:9000"

@@ -10,7 +10,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 set -a; source .env; set +a
-API="${SELFU_ACCEPTANCE_API:-http://localhost:18080}"
+API="${SELFU_ACCEPTANCE_API:-https://platform.pruxi.in}"
+RES="--resolve platform.pruxi.in:443:127.0.0.1 --resolve auth.pruxi.in:443:127.0.0.1"
 
 say()  { printf '\n\033[1;36m== %s ==\033[0m\n' "$*"; }
 die()  { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -30,15 +31,15 @@ print(p.decode()+'.'+sig.decode())
 PY
 )
 CK="selfu_session=$TOKEN"
-api() { curl -s -b "$CK" -m 20 "$@"; }
-code() { curl -s -o /dev/null -w '%{http_code}' -b "$CK" -m 20 "$@"; }
+api() { curl -s $RES -b "$CK" -m 20 "$@"; }
+code() { curl -s $RES -o /dev/null -w '%{http_code}' -b "$CK" -m 20 "$@"; }
 
 DOMAIN="${SELFU_ACCEPTANCE_DOMAIN:-pruxi.in}"
 SUFFIX="$(date +%s)"
 
 say "1. health + auth gates"
 [ "$(code "$API/api/v1/health")" = "200" ] || die "health not 200"
-[ "$(curl -s -o /dev/null -w '%{http_code}' "$API/api/v1/me")" = "401" ] || die "me should be 401 unauthenticated"
+[ "$(curl -s $RES -o /dev/null -w '%{http_code}' "$API/api/v1/me")" = "401" ] || die "me should be 401 unauthenticated"
 
 say "2. identity: org, user, group"
 ORG=$(api -H 'Content-Type: application/json' -d "{\"name\":\"Acceptance $SUFFIX\"}" "$API/api/v1/organizations" \
