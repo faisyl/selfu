@@ -124,6 +124,30 @@ services:
       - chasquid-etc:/etc/chasquid
       - chasquid-data:/data
 
+  worker:
+    build: .
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/worker"]
+    environment:
+      SELFU_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/selfu
+      SELFU_SESSION_SECRET: ${SELFU_SESSION_SECRET:?set in .env}
+      SELFU_OIDC_CLIENT_ID: ${SELFU_OIDC_CLIENT_ID:?set in .env}
+      SELFU_OIDC_CLIENT_SECRET: ${SELFU_OIDC_CLIENT_SECRET:?set in .env}
+      SELFU_OIDC_ISSUER: ${AUTHENTIK_HOST}${SELFU_OIDC_ISSUER_PATH:-/application/o/selfu/}
+      SELFU_OIDC_REDIRECT_URL: ${SELFU_OIDC_REDIRECT_URL:?set in .env}
+      SELFU_AUTHENTIK_URL: ${AUTHENTIK_HOST}
+      SELFU_AUTHENTIK_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      SELFU_CHASQUID_AGENT_URL: http://127.0.0.1:8530
+      SELFU_CHASQUID_AGENT_TOKEN: ${CHASQUID_AGENT_TOKEN:-}
+      SELFU_RECONCILE_INTERVAL: ${SELFU_RECONCILE_INTERVAL:-30}
+      SELFU_OIDC_TLS_INSECURE: "true"
+    network_mode: host
+    depends_on:
+      db:
+        condition: service_healthy
+      chasquid:
+        condition: service_started
+
   api:
     build: .
     restart: unless-stopped

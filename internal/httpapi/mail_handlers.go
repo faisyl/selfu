@@ -12,6 +12,7 @@ import (
 
 	"selfu/internal/chasquid"
 	"selfu/internal/domain"
+	"selfu/internal/recon"
 	"selfu/internal/store"
 )
 
@@ -146,9 +147,8 @@ func (h *Handler) mailStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// reconcileMail conservatively re-aligns desired vs observed chasquid state
-// (spec §92): aliases are restored; missing users are flagged (never
-// re-created — credentials are stored as fingerprints only).
+// reconcileMail runs one conservative pass using the shared reconciler
+// (spec §92; same logic as the background worker, spec §21).
 func (h *Handler) reconcileMail(w http.ResponseWriter, r *http.Request) {
 	d, err := h.d.DomainStore.GetDomainByID(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -167,78 +167,28 @@ func (h *Handler) reconcileMail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	aliasesRestored := 0
-	aliases, err := h.d.MailStore.ListMailAliasesByDomain(r.Context(), d.ID)
-	if err != nil {
-		h.internalError(w, err)
-		return
-	}
-	for _, a := range aliases {
-		if a.Status != "active" {
-			continue
-		}
-		// Group-bound aliases: recompute destinations from the group's
-		// active identities (spec §42–43).
-		if a.GroupID != nil {
-			members, err := h.d.IdentityStore.ListGroupMembers(r.Context(), *a.GroupID)
+	rec := &recon.MailReconciler{
+		Mail: h.d.MailStore,
+		GroupMembers: func(ctx context.Context, groupID string) ([]string, error) {
+			members, err := h.d.IdentityStore.ListGroupMembers(ctx, groupID)
 			if err != nil {
-				continue
+				return nil, err
 			}
-			userIDs := make([]string, 0, len(members))
+			ids := make([]string, 0, len(members))
 			for _, m := range members {
-				userIDs = append(userIDs, m.UserID)
+				ids = append(ids, m.UserID)
 			}
-			identities, err := h.d.MailStore.ListMailIdentitiesByUsers(r.Context(), d.OrganizationID, userIDs)
-			if err != nil {
-				continue
-			}
-			var dests []string
-			for _, idn := range identities {
-				dests = append(dests, idn.Address)
-			}
-			if err := h.d.MailStore.UpdateMailAliasDestinations(r.Context(), a.ID, dests); err != nil {
-				h.d.Logger.Warn("update group alias destinations failed", "err", err, "alias", a.Address)
-			}
-			if err := h.d.Chasquid.EnsureAlias(r.Context(), d.FQDN, a.LocalPart, dests); err != nil {
-				h.d.Logger.Warn("group alias reconcile failed", "err", err, "address", a.Address)
-				continue
-			}
-			aliasesRestored++
-			continue
-		}
-		if err := h.d.Chasquid.EnsureAlias(r.Context(), d.FQDN, a.LocalPart, a.Destinations); err != nil {
-			h.d.Logger.Warn("alias reconcile failed", "err", err, "address", a.Address)
-			continue
-		}
-		aliasesRestored++
+			return ids, nil
+		},
+		Chasquid:     h.d.Chasquid,
+		Audit:        h.d.Audit,
+		Logger:       h.d.Logger,
+		ProviderName: h.d.ProviderName,
 	}
-	_ = h.d.Chasquid.Reload(r.Context())
-
-	missingUsers := []string{}
-	identities, err := h.d.MailStore.ListMailIdentitiesByDomain(r.Context(), d.ID)
+	res, err := rec.ReconcileDomain(r.Context(), d.ID, d.FQDN, d.OrganizationID)
 	if err != nil {
 		h.internalError(w, err)
 		return
-	}
-	for _, idn := range identities {
-		if idn.Status != domain.MailIdentityActive {
-			continue
-		}
-		ok, err := h.d.Chasquid.UserExists(r.Context(), idn.Address)
-		if err != nil {
-			continue
-		}
-		if !ok {
-			missingUsers = append(missingUsers, idn.Address)
-			_ = h.d.MailStore.SetMailIdentityStatus(r.Context(), idn.ID, domain.MailIdentitySuspended)
-			h.audit(r.Context(), domain.AuditEvent{
-				ActorUserID:  new(rUser(r).ID),
-				Action:       "mail.identity.reconciliation_failed",
-				ResourceType: "mail_identity",
-				ResourceID:   idn.ID,
-				Details:      map[string]any{"address": idn.Address, "reason": "chasquid user missing"},
-			})
-		}
 	}
 
 	h.audit(r.Context(), domain.AuditEvent{
@@ -246,12 +196,15 @@ func (h *Handler) reconcileMail(w http.ResponseWriter, r *http.Request) {
 		Action:       "mail.reconciliation",
 		ResourceType: "domain",
 		ResourceID:   d.ID,
-		Details:      map[string]any{"aliases_restored": aliasesRestored, "identities_missing": len(missingUsers)},
+		Details: map[string]any{
+			"aliases_restored":   res.AliasesRestored + res.GroupAliases,
+			"identities_missing": len(res.MissingUsers),
+		},
 	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"domain_id":          d.ID,
-		"aliases_restored":   aliasesRestored,
-		"identities_missing": missingUsers,
+		"aliases_restored":   res.AliasesRestored + res.GroupAliases,
+		"identities_missing": res.MissingUsers,
 		"note":               "missing identities are suspended, never recreated (spec §92)",
 	})
 }
