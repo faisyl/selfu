@@ -218,11 +218,14 @@ disk, bob suspended, worker audit events written. Failures are logged per
 domain and never abort the loop (retry next tick, spec §21). The API's
 on-demand `/mail/reconcile` now delegates to the same reconciler.
 
-**G6b — remaining (tracked):** external_resources observed-state sync
-(verify authentik/chasquid counterparts + `observed_hash`/`status` per §22),
-deployment-events table for the compose-up provider, and richer failure
-recovery (per-resource backoff). The docker compose `up` provider (from G5b)
-lands here too.
+**Status (2026-08-18): G6b DONE (`bbc86df`).** External-resource
+observed-state sync verified live: real authentik rows → `active` +
+`observed_hash`; injected bogus row → `failed` + `last_error` + worker WARN
+(flagged, never removed, §92). Applications are verified through their sibling
+provider (authentik only surfaces current-brand apps — the provider is the
+auth boundary). Remaining, deferred with the compose-up provider (G6c/G8):
+deployment-events table, per-resource backoff, and the docker compose `up`
+provider from G5b.
 
 **Objective**: ExternalResource tracking (§22), desired vs observed state §21, worker loop, retries, failure recovery, idempotency guarantee, conservative failure mode (§92).
 
