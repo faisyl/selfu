@@ -42,6 +42,35 @@ func (s *Store) GetExternalResource(ctx context.Context, resourceType, platformO
 	return res, nil
 }
 
+// ListExternalResourcesByProvider returns all mappings for a provider.
+func (s *Store) ListExternalResourcesByProvider(ctx context.Context, provider string) ([]domain.ExternalResource, error) {
+	rows, err := s.pool.Query(ctx, listExternalByProviderSQL, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.ExternalResource
+	for rows.Next() {
+		var res domain.ExternalResource
+		if err := rows.Scan(&res.ID, &res.ResourceType, &res.PlatformObjectID, &res.Provider,
+			&res.ExternalID, &res.Status, &res.CreatedAt, &res.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, res)
+	}
+	return out, rows.Err()
+}
+
+// SetExternalObserved records the observed state + hash of a mapping
+// (spec §22).
+func (s *Store) SetExternalObserved(ctx context.Context, id, status, observedHash, lastErr string) error {
+	_, err := s.pool.Exec(ctx, setExternalObservedSQL, status, observedHash, lastErr, id)
+	if err != nil {
+		return fmt.Errorf("set external observed: %w", err)
+	}
+	return nil
+}
+
 // SetExternalStatus updates the observed status of an external resource.
 func (s *Store) SetExternalStatus(ctx context.Context, id, status, lastErr string) error {
 	_, err := s.pool.Exec(ctx, setExternalStatusSQL, status, lastErr, id)
@@ -84,6 +113,14 @@ RETURNING id, resource_type, platform_object_id, provider, external_id, status, 
 const externalByObjectSQL = `
 SELECT id, resource_type, platform_object_id, provider, external_id, status, created_at, updated_at
 FROM external_resources WHERE resource_type = $1 AND platform_object_id = $2`
+
+const listExternalByProviderSQL = `
+SELECT id, resource_type, platform_object_id, provider, external_id, status, created_at, updated_at
+FROM external_resources WHERE provider = $1 ORDER BY resource_type`
+
+const setExternalObservedSQL = `
+UPDATE external_resources SET status = $1, observed_hash = $2, last_error = $3, updated_at = now()
+WHERE id = $4`
 
 const setExternalStatusSQL = `
 UPDATE external_resources SET status = $1, last_error = $2, updated_at = now() WHERE id = $3`

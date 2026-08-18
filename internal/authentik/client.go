@@ -465,6 +465,43 @@ func (c *Client) EnsureForwardAuth(ctx context.Context, name, slug, externalHost
 	return AppOIDC{ProviderPK: providerPK, ApplicationPK: appPK}, nil
 }
 
+// ResourceExists reports whether an authentik object with the given pk
+// still exists (observed-state sync, spec §22). Provider pks are checked
+// against the oauth2 endpoint (documented limitation: proxy providers use
+// a different namespace).
+func (c *Client) ResourceExists(ctx context.Context, resourceType, pk string) (bool, error) {
+	var path string
+	switch resourceType {
+	case "authentik_user":
+		path = "/api/v3/core/users/" + pk + "/"
+	case "authentik_group":
+		path = "/api/v3/core/groups/" + pk + "/"
+	case "authentik_application":
+		path = "/api/v3/core/applications/" + pk + "/"
+	case "authentik_provider":
+		path = "/api/v3/providers/oauth2/" + pk + "/"
+	default:
+		return true, nil // unknown types are not checked here
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if resp.StatusCode >= 300 {
+		return false, fmt.Errorf("authentik %s: status %d", path, resp.StatusCode)
+	}
+	return true, nil
+}
+
 // EnsureApplication attaches a provider to the application with the slug.
 func (c *Client) EnsureApplication(ctx context.Context, slug string, providerPK int) error {
 	var existing struct {
