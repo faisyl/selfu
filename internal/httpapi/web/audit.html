@@ -1,0 +1,24 @@
+{{define "audit"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+
+<h2>Audit log</h2>
+<table>
+<tr><th>When</th><th>Actor</th><th>Action</th><th>Resource</th><th>Details</th></tr>
+{{range .Data.Events}}<tr>
+  <td>{{.OccurredAt.Format "2006-01-02 15:04:05"}}</td>
+  <td>{{if .ActorUserID}}{{.ActorUserID}}{{end}}</td>
+  <td><code>{{.Action}}</code></td>
+  <td>{{if .ResourceType}}{{.ResourceType}}:{{.ResourceID}}{{end}}</td>
+  <td><small>{{range $k, $v := .Details}}{{$k}}={{$v}} {{end}}</small></td>
+</tr>{{end}}
+</table>
+
+</main>
+</body>
+</html>{{end}}

@@ -1,0 +1,57 @@
+{{define "domains"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+
+<h2>Domains</h2>
+<form class="inline" action="/ui/domains" method="get">
+  <select name="org" onchange="this.form.submit()">
+    <option value="">— select organization —</option>
+    {{range .Data.Orgs}}<option value="{{.ID}}" {{if eq .ID $.Data.OrgID}}selected{{end}}>{{.Name}}</option>{{end}}
+  </select>
+  <input hidden name="domain" value="">
+</form>
+<form class="inline" onsubmit="api('/api/v1/organizations/'+document.querySelector('[name=org]').value+'/domains',{method:'POST',body:{fqdn:this.fqdn.value}});return false">
+  <input name="fqdn" placeholder="example.com" required>
+  <button type="submit">Add domain</button>
+</form>
+<table>
+<tr><th>FQDN</th><th>Status</th><th>Web</th><th>Mail</th><th></th></tr>
+{{range .Data.Domains}}<tr>
+  <td>{{.FQDN}}</td><td>{{.Status}}</td><td>{{if .WebEnabled}}yes{{end}}</td><td>{{if .MailEnabled}}yes{{end}}</td>
+  <td>
+    <a href="/ui/mail?org={{$.Data.OrgID}}&domain={{.ID}}">Mail</a>
+    <button onclick="api('/api/v1/domains/{{.ID}}/verify',{method:'POST'})">Verify</button>
+    <button onclick="api('/api/v1/domains/{{.ID}}',{method:'DELETE'})">Delete</button>
+  </td>
+</tr>{{end}}
+</table>
+<form class="inline" onsubmit="const d=document.querySelector('[name=domid]');if(!d.value){alert('select a domain');return false;}api('/api/v1/domains/'+d.value+'/hostnames',{method:'POST',body:{hostname:this.hostname.value}});return false">
+  <select name="domid">
+    <option value="">— domain —</option>
+    {{range .Data.Domains}}<option value="{{.ID}}">{{.FQDN}}</option>{{end}}
+  </select>
+  <input name="hostname" placeholder="git.example.com" required>
+  <button type="submit">Bind hostname</button>
+</form>
+{{if .Data.Hostnames}}
+<table><tr><th>Hostnames</th></tr>
+{{range .Data.Hostnames}}<tr><td>{{.Hostname}}</td></tr>{{end}}
+</table>
+{{end}}
+<script>
+async function api(url, opts={}){
+  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
+    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
+  if(!r.ok){ alert((await r.json().catch(()=> ({}))).error?.message || r.status); return; }
+  location.reload();
+}
+</script>
+
+</main>
+</body>
+</html>{{end}}

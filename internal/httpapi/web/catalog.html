@@ -1,0 +1,40 @@
+{{define "catalog"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+
+<h2>Catalog & installation</h2>
+<table>
+<tr><th>Name</th><th>Slug</th><th>Version</th><th>Category</th></tr>
+{{range .Data.Apps}}<tr><td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td>{{.Version}}</td><td>{{.Category}}</td></tr>{{end}}
+</table>
+<form class="inline" onsubmit="api('/api/v1/organizations/'+this.org.value+'/applications',{method:'POST',body:{catalog_id:this.app.value,hostname:this.hostname.value}});return false">
+  <select name="org" required>
+    <option value="">— organization —</option>
+    {{range .Data.Orgs}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+  </select>
+  <select name="app" required>
+    <option value="">— catalog app —</option>
+    {{range .Data.Apps}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+  </select>
+  <input name="hostname" placeholder="git.example.com" required>
+  <button type="submit">Install</button>
+</form>
+<p class="err">{{.Data.Err}}</p>
+<script>
+async function api(url, opts={}){
+  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
+    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
+  if(!r.ok){ alert((await r.json().catch(()=> ({}))).error?.message || r.status); return; }
+  location.reload();
+  alert('installed — OIDC/SMTP credentials shown once in the API response');
+}
+</script>
+
+</main>
+</body>
+</html>{{end}}

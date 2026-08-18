@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -28,6 +29,35 @@ func (s *Store) CreateAuditEvent(ctx context.Context, e domain.AuditEvent) error
 	return nil
 }
 
+// ListAuditEvents returns the most recent audit events (UI, §68).
+func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]domain.AuditEvent, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, listAuditEventsSQL, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.AuditEvent
+	for rows.Next() {
+		var e domain.AuditEvent
+		var details []byte
+		if err := rows.Scan(&e.ID, &e.OccurredAt, &e.ActorUserID, &e.Action, &e.ResourceType,
+			&e.ResourceID, &details, &e.RequestID); err != nil {
+			return nil, err
+		}
+		if len(details) > 0 {
+			_ = json.Unmarshal(details, &e.Details)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+const listAuditEventsSQL = `
+SELECT id, occurred_at, actor_user_id, action, resource_type, resource_id, details, request_id
+FROM audit_events ORDER BY occurred_at DESC LIMIT $1`
 const insertAuditEventSQL = `
 INSERT INTO audit_events (id, actor_user_id, action, resource_type, resource_id, details, request_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)`

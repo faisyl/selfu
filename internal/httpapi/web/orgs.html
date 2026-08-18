@@ -1,0 +1,31 @@
+{{define "orgs"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+
+<h2>Organizations</h2>
+{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
+<form class="inline" onsubmit="api('/api/v1/organizations',{method:'POST',body:{name:this.name.value}});return false">
+  <input name="name" placeholder="Organization name" required>
+  <button type="submit">Create</button>
+</form>
+<table>
+<tr><th>Name</th><th>Slug</th><th>Status</th></tr>
+{{range .Data.Orgs}}<tr><td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td>{{.Status}}</td></tr>{{end}}
+</table>
+<script>
+async function api(url, opts={}){
+  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
+    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
+  if(!r.ok){ alert((await r.json().catch(()=> ({}))).error?.message || r.status); return; }
+  location.reload();
+}
+</script>
+
+</main>
+</body>
+</html>{{end}}

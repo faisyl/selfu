@@ -1,0 +1,37 @@
+{{define "users"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+
+<h2>Users</h2>
+<form class="inline" onsubmit="api('/api/v1/users',{method:'POST',body:{email:this.email.value,display_name:this.display.value,organization_id:this.org.value}});return false">
+  <input name="email" placeholder="email" required>
+  <input name="display" placeholder="Display name">
+  <select name="org"><option value="">no org</option>
+    {{range .Data.Orgs}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+  </select>
+  <button type="submit">Create user</button>
+</form>
+<table>
+<tr><th>Email</th><th>Name</th><th>Status</th><th>Admin</th><th></th></tr>
+{{range .Data.Users}}<tr>
+  <td>{{.Email}}</td><td>{{.DisplayName}}</td><td>{{.Status}}</td><td>{{if .IsAdmin}}yes{{end}}</td>
+  <td><button onclick="api('/api/v1/users/{{.ID}}/disable',{method:'POST'})">Disable</button></td>
+</tr>{{end}}
+</table>
+<script>
+async function api(url, opts={}){
+  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
+    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
+  if(!r.ok){ alert((await r.json().catch(()=> ({}))).error?.message || r.status); return; }
+  location.reload();
+}
+</script>
+
+</main>
+</body>
+</html>{{end}}

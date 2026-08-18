@@ -30,9 +30,10 @@ type UserStore interface {
 	GetByID(ctx context.Context, id string) (domain.User, error)
 }
 
-// AuditStore persists audit events.
+// AuditStore persists and lists audit events.
 type AuditStore interface {
 	CreateAuditEvent(ctx context.Context, e domain.AuditEvent) error
+	ListAuditEvents(ctx context.Context, limit int) ([]domain.AuditEvent, error)
 }
 
 // Deps wires the handler dependencies; New builds the full router from it.

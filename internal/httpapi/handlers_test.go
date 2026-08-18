@@ -60,6 +60,10 @@ func (f *fakeAudit) CreateAuditEvent(_ context.Context, e domain.AuditEvent) err
 	return nil
 }
 
+func (f *fakeAudit) ListAuditEvents(_ context.Context, _ int) ([]domain.AuditEvent, error) {
+	return f.events, nil
+}
+
 func newHandler(t *testing.T, users *fakeUsers) (*Handler, *fakeAudit, *auth.SessionStore, *fakeOIDC) {
 	t.Helper()
 	sessions, err := auth.NewSessionStore(auth.SessionStoreOptions{

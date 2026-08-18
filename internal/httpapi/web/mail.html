@@ -1,0 +1,58 @@
+{{define "mail"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+
+<h2>Mail</h2>
+<form class="inline" action="/ui/mail" method="get">
+  <select name="org" onchange="this.form.submit()">
+    <option value="">— select organization —</option>
+    {{range .Data.Orgs}}<option value="{{.ID}}" {{if eq .ID $.Data.OrgID}}selected{{end}}>{{.Name}}</option>{{end}}
+  </select>
+</form>
+{{if .Data.DomainID}}
+  <h3>{{.Data.FQDN}}</h3>
+  {{if .Data.MailDomain}}
+    <p>Status: <code>{{.Data.MailDomain.Status}}</code> · DKIM <code>{{.Data.MailDomain.DKIM}}</code> · TLS <code>{{.Data.MailDomain.TLS}}</code></p>
+    {{if not .Data.MailDomain.GroupID}}
+    <table>
+      <tr><th>Address</th><th>Status</th></tr>
+      {{range .Data.Identities}}<tr><td>{{.Address}}</td><td>{{.Status}}</td></tr>{{end}}
+    </table>
+    <form class="inline" onsubmit="api('/api/v1/domains/{{.Data.DomainID}}/mail-identities',{method:'POST',body:{local_part:this.local.value}});return false">
+      <input name="local" placeholder="alice" required>
+      <button type="submit">Create mailbox</button>
+    </form>
+    <h4>Aliases</h4>
+    <table>
+      <tr><th>Address</th><th>Destinations</th></tr>
+      {{range .Data.Aliases}}<tr><td>{{.Address}}</td><td>{{range .Destinations}}{{.}} {{end}}</td></tr>{{end}}
+    </table>
+    <form class="inline" onsubmit="api('/api/v1/domains/{{.Data.DomainID}}/mail/aliases',{method:'POST',body:{local_part:this.local.value,destinations:[this.dest.value]}});return false">
+      <input name="local" placeholder="support" required>
+      <input name="dest" placeholder="alice@domain" required>
+      <button type="submit">Add alias</button>
+    </form>
+    {{end}}
+  {{else}}
+    <form class="inline" onsubmit="api('/api/v1/domains/{{.Data.DomainID}}/mail',{method:'POST'});return false">
+      <button type="submit">Enable mail</button>
+    </form>
+  {{end}}
+{{end}}
+<script>
+async function api(url, opts={}){
+  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
+    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
+  if(!r.ok){ alert((await r.json().catch(()=> ({}))).error?.message || r.status); return; }
+  location.reload();
+}
+</script>
+
+</main>
+</body>
+</html>{{end}}

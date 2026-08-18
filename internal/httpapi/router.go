@@ -49,6 +49,15 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/v1/organizations/{id}/applications", h.authn(h.createApplication))
 	mux.Handle("GET /api/v1/organizations/{id}/applications", h.authn(h.listApplications))
 
+	// G7 — admin console (thin templates over the API, same OIDC session).
+	mux.HandleFunc("GET /", h.uiDashboard)
+	mux.HandleFunc("GET /ui/orgs", h.uiOrgs)
+	mux.HandleFunc("GET /ui/users", h.uiUsers)
+	mux.HandleFunc("GET /ui/domains", h.uiDomains)
+	mux.HandleFunc("GET /ui/mail", h.uiMail)
+	mux.HandleFunc("GET /ui/catalog", h.uiCatalog)
+	mux.HandleFunc("GET /ui/audit", h.uiAudit)
+
 	var root http.Handler = mux
 	root = accessLog(d.Logger)(root)
 	root = withRecoverer(d.Logger)(root)
