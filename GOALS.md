@@ -26,8 +26,8 @@ updates this file, and commits.
 | G4a Mail core (chasquid) | 4 | done | verified 2026-08-17: real SMTP AUTH + alias + rotate |
 | G5a Applications core | 5 | done | verified 2026-08-18: catalog, install, OIDC+app SMTP live |
 | G6a Reconciliation worker | 6 | done | verified 2026-08-18: drift healed within one tick |
-| G7 UI | 7 | pending | depends on G6 |
-| G8 Acceptance & hardening | v0 | pending | depends on G7 |
+| G7 UI | 7 | done | verified 2026-08-18: browser-rendered console, form action -> DB+audit |
+| G8 Acceptance & hardening | v0 | done | verified 2026-08-18: acceptance.sh green, backup.sh artifacts, pin audit |
 
 ## Cross-cutting constraints (every goal)
 
