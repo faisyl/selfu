@@ -12,6 +12,7 @@ import (
 	"selfu/internal/chasquid"
 	"selfu/internal/domain"
 	"selfu/internal/store"
+	"selfu/internal/traefik"
 )
 
 // AppStore is the application persistence surface. *store.Store satisfies it.
@@ -29,10 +30,12 @@ type AppStore interface {
 	AddInstanceAccessGroup(ctx context.Context, instanceID, groupID string) error
 }
 
-// AppProvisioner provisions per-app OIDC providers. *authentik.Client
-// satisfies it (wired as Deps.Identity in cmd/api).
+// AppProvisioner provisions per-app OIDC (spec §82) and forward-auth
+// (spec §83) providers. *authentik.Client satisfies it (wired as
+// Deps.Identity in cmd/api).
 type AppProvisioner interface {
 	EnsureAppOIDC(ctx context.Context, name, slug, redirectURI string) (authentik.AppOIDC, error)
+	EnsureForwardAuth(ctx context.Context, name, slug, externalHost string) (authentik.AppOIDC, error)
 }
 
 func (h *Handler) listCatalog(w http.ResponseWriter, r *http.Request) {
@@ -136,37 +139,72 @@ func (h *Handler) createApplication(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]any{"instance_id": instanceID, "name": name, "hostname": hostname}
+	slug := slugifyInstance(name)
+	forwardAuth := m.Authentication.Mode == catalog.AuthForwardAuth
+	port := 80
+	if m.Network.HTTP != nil {
+		port = m.Network.HTTP.ContainerPort
+	}
+	resp["traefik"] = traefik.RouteLabels(instanceID, hostname, port, forwardAuth)
 
-	// OIDC: provision an authentik provider + application.
-	if m.Authentication.Mode == catalog.AuthOIDC {
-		if p, ok := h.d.Identity.(AppProvisioner); ok {
-			slug := slugifyInstance(name)
-			redirect := "https://" + hostname + ".*"
-			oidc, err := p.EnsureAppOIDC(r.Context(), name, slug, redirect)
-			if err != nil {
-				h.d.Logger.Warn("app oidc provisioning failed", "err", err, "instance", instanceID)
-			} else {
-				_, _ = h.d.IdentityStore.UpsertExternalResource(r.Context(), domain.ExternalResource{
-					ResourceType:     domain.ResTypeAuthentikProvider,
-					PlatformObjectID: instanceID,
-					Provider:         h.d.ProviderName,
-					ExternalID:       strconv.Itoa(oidc.ProviderPK),
-					Status:           domain.ExtActive,
-				})
-				_, _ = h.d.IdentityStore.UpsertExternalResource(r.Context(), domain.ExternalResource{
-					ResourceType:     domain.ResTypeAuthentikApplication,
-					PlatformObjectID: instanceID,
-					Provider:         h.d.ProviderName,
-					ExternalID:       oidc.ApplicationPK,
-					Status:           domain.ExtActive,
-				})
-				resp["oidc"] = map[string]any{
-					"client_id":     oidc.ClientID,
-					"client_secret": oidc.ClientSecret,
-					"redirect_uri":  redirect,
-					"note":          "shown once; configure the application with these",
-				}
+	// OIDC: provision an authentik provider + application (§82).
+	switch {
+	case m.Authentication.Mode == catalog.AuthOIDC && h.d.Identity != nil:
+		p, ok := h.d.Identity.(AppProvisioner)
+		if !ok {
+			break
+		}
+		redirect := "https://" + hostname + ".*"
+		oidc, err := p.EnsureAppOIDC(r.Context(), name, slug, redirect)
+		if err != nil {
+			h.d.Logger.Warn("app oidc provisioning failed", "err", err, "instance", instanceID)
+		} else {
+			_, _ = h.d.IdentityStore.UpsertExternalResource(r.Context(), domain.ExternalResource{
+				ResourceType:     domain.ResTypeAuthentikProvider,
+				PlatformObjectID: instanceID,
+				Provider:         h.d.ProviderName,
+				ExternalID:       strconv.Itoa(oidc.ProviderPK),
+				Status:           domain.ExtActive,
+			})
+			_, _ = h.d.IdentityStore.UpsertExternalResource(r.Context(), domain.ExternalResource{
+				ResourceType:     domain.ResTypeAuthentikApplication,
+				PlatformObjectID: instanceID,
+				Provider:         h.d.ProviderName,
+				ExternalID:       oidc.ApplicationPK,
+				Status:           domain.ExtActive,
+			})
+			resp["oidc"] = map[string]any{
+				"client_id":     oidc.ClientID,
+				"client_secret": oidc.ClientSecret,
+				"redirect_uri":  redirect,
+				"note":          "shown once; configure the application with these",
 			}
+		}
+	case forwardAuth && h.d.Identity != nil:
+		// Forward-auth provider + application (spec §83).
+		p, ok := h.d.Identity.(AppProvisioner)
+		if !ok {
+			break
+		}
+		fa, err := p.EnsureForwardAuth(r.Context(), name, slug, "https://"+hostname)
+		if err != nil {
+			h.d.Logger.Warn("app forward-auth provisioning failed", "err", err, "instance", instanceID)
+		} else {
+			_, _ = h.d.IdentityStore.UpsertExternalResource(r.Context(), domain.ExternalResource{
+				ResourceType:     domain.ResTypeAuthentikProvider,
+				PlatformObjectID: instanceID,
+				Provider:         h.d.ProviderName,
+				ExternalID:       strconv.Itoa(fa.ProviderPK),
+				Status:           domain.ExtActive,
+			})
+			_, _ = h.d.IdentityStore.UpsertExternalResource(r.Context(), domain.ExternalResource{
+				ResourceType:     domain.ResTypeAuthentikApplication,
+				PlatformObjectID: instanceID,
+				Provider:         h.d.ProviderName,
+				ExternalID:       fa.ApplicationPK,
+				Status:           domain.ExtActive,
+			})
+			resp["forward_auth"] = map[string]any{"configured": true}
 		}
 	}
 

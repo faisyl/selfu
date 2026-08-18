@@ -389,6 +389,82 @@ func (c *Client) EnsureAppOIDC(ctx context.Context, name, slug, redirectURI stri
 	return AppOIDC{ProviderPK: providerPK, ApplicationPK: appPK, ClientID: clientID, ClientSecret: clientSecret}, nil
 }
 
+// EnsureForwardAuth provisions an authentik forward-auth (proxy) provider
+// and application for a legacy app (spec §83).
+func (c *Client) EnsureForwardAuth(ctx context.Context, name, slug, externalHost string) (AppOIDC, error) {
+	// Bit relative to filesystem dirs. Dedup by scanning provider list
+	// (authentik ignores name filters on list).
+	var all struct {
+		Results []struct {
+			PK   int    `json:"pk"`
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+	if err := c.Do(ctx, http.MethodGet, "/api/v3/providers/proxy/", url.Values{"page_size": []string{"200"}}, nil, &all); err != nil {
+		return AppOIDC{}, err
+	}
+	providerPK := 0
+	for _, p := range all.Results {
+		if p.Name == name {
+			providerPK = p.PK
+			break
+		}
+	}
+	if providerPK == 0 {
+		flowPK, err := c.flowPKByDesignation(ctx, "authorization", "default-provider-authorization-explicit-consent")
+		if err != nil {
+			return AppOIDC{}, err
+		}
+		invalidationPK, err := c.flowPKByDesignation(ctx, "invalidation", "default-provider-invalidation-flow")
+		if err != nil {
+			return AppOIDC{}, err
+		}
+		var created struct {
+			PK int `json:"pk"`
+		}
+		if err := c.Do(ctx, http.MethodPost, "/api/v3/providers/proxy/", nil, map[string]any{
+			"name":               name,
+			"authorization_flow": flowPK,
+			"invalidation_flow":  invalidationPK,
+			"external_host":      externalHost,
+			"mode":               "forward_single",
+			"cookie_secure":      false,
+		}, &created); err != nil {
+			return AppOIDC{}, err
+		}
+		providerPK = created.PK
+	}
+
+	var apps struct {
+		Results []struct {
+			PK       string `json:"pk"`
+			Slug     string `json:"slug"`
+			Provider *int   `json:"provider"`
+		} `json:"results"`
+	}
+	if err := c.Do(ctx, http.MethodGet, "/api/v3/core/applications/", url.Values{"page_size": []string{"200"}}, nil, &apps); err != nil {
+		return AppOIDC{}, err
+	}
+	appPK := ""
+	for _, a := range apps.Results {
+		if a.Slug == slug && a.Provider != nil && *a.Provider == providerPK {
+			appPK = a.PK
+			break
+		}
+	}
+	if appPK == "" {
+		var created struct {
+			PK string `json:"pk"`
+		}
+		if err := c.Do(ctx, http.MethodPost, "/api/v3/core/applications/", nil,
+			map[string]any{"name": name, "slug": slug, "provider": providerPK}, &created); err != nil {
+			return AppOIDC{}, err
+		}
+		appPK = created.PK
+	}
+	return AppOIDC{ProviderPK: providerPK, ApplicationPK: appPK}, nil
+}
+
 // EnsureApplication attaches a provider to the application with the slug.
 func (c *Client) EnsureApplication(ctx context.Context, slug string, providerPK int) error {
 	var existing struct {
