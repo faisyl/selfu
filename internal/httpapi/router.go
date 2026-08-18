@@ -24,6 +24,8 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/v1/users", h.authn(h.createUser))
 	mux.Handle("GET /api/v1/users", h.authn(h.listUsers))
 	mux.Handle("POST /api/v1/users/{id}/disable", h.authn(h.disableUser))
+	mux.Handle("GET /api/v1/catalog", h.authn(h.listCatalog))
+	mux.Handle("POST /api/v1/catalog", h.authn(h.registerCatalog))
 
 	// G3 — domains.
 	mux.Handle("POST /api/v1/organizations/{id}/domains", h.authn(h.createDomain))
@@ -43,6 +45,9 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/v1/mail-identities/{id}/credentials/rotate", h.authn(h.rotateMailCredential))
 	mux.Handle("POST /api/v1/domains/{id}/mail/aliases", h.authn(h.createMailAlias))
 	mux.Handle("GET /api/v1/domains/{id}/mail/aliases", h.authn(h.listMailAliases))
+
+	mux.Handle("POST /api/v1/organizations/{id}/applications", h.authn(h.createApplication))
+	mux.Handle("GET /api/v1/organizations/{id}/applications", h.authn(h.listApplications))
 
 	var root http.Handler = mux
 	root = accessLog(d.Logger)(root)

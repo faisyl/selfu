@@ -115,11 +115,13 @@ type MailCredential struct {
 }
 
 // MailSubmissionPolicy binds a credential to the senders it may use
-// (spec §49; enforced by the post-data hook in G4b).
+// (spec §49; enforced by the post-data hook). ApplicationInstanceID links
+// the policy to an app instance for application SMTP credentials (§46).
 type MailSubmissionPolicy struct {
-	ID                   string   `json:"id"`
-	MailIdentityID       string   `json:"mail_identity_id"`
-	CredentialID         string   `json:"credential_id"`
-	AllowedFromAddresses []string `json:"allowed_from_addresses"`
-	AllowedFromDomains   []string `json:"allowed_from_domains"`
+	ID                    string   `json:"id"`
+	MailIdentityID        string   `json:"mail_identity_id"`
+	CredentialID          string   `json:"credential_id"`
+	AllowedFromAddresses  []string `json:"allowed_from_addresses"`
+	AllowedFromDomains    []string `json:"allowed_from_domains"`
+	ApplicationInstanceID *string  `json:"application_instance_id,omitempty"`
 }

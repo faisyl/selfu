@@ -236,7 +236,7 @@ func (s *Store) DeleteMailAlias(ctx context.Context, id string) error {
 // CreateMailSubmissionPolicy records what a credential may send as (spec §49).
 func (s *Store) CreateMailSubmissionPolicy(ctx context.Context, p domain.MailSubmissionPolicy) error {
 	_, err := s.pool.Exec(ctx, insertMailPolicySQL,
-		uuid.NewString(), p.MailIdentityID, p.CredentialID, arr(p.AllowedFromAddresses), arr(p.AllowedFromDomains))
+		uuid.NewString(), p.MailIdentityID, p.CredentialID, arr(p.AllowedFromAddresses), arr(p.AllowedFromDomains), p.ApplicationInstanceID)
 	if err != nil {
 		return fmt.Errorf("create mail policy: %w", err)
 	}
@@ -331,5 +331,5 @@ const deleteMailAliasSQL = `DELETE FROM mail_aliases WHERE id = $1`
 
 const insertMailPolicySQL = `
 INSERT INTO mail_submission_policies
-    (id, mail_identity_id, credential_id, allowed_from_addresses, allowed_from_domains)
-VALUES ($1, $2, $3, $4, $5)`
+    (id, mail_identity_id, credential_id, allowed_from_addresses, allowed_from_domains, application_instance_id)
+VALUES ($1, $2, $3, $4, $5, $6)`

@@ -63,6 +63,9 @@ type Deps struct {
 	MailStore MailStore
 	// Chasquid is the chasquid controller (nil = mail provisioning off).
 	Chasquid chasquid.ChasquidController
+
+	// Apps is the application catalog/instance persistence surface (G5).
+	Apps AppStore
 }
 
 // Handler serves the REST API and the OIDC login flow.

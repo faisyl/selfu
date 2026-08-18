@@ -7,7 +7,9 @@ package authentik
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -290,6 +292,103 @@ func (c *Client) EnsureOIDCProvider(ctx context.Context, clientID, clientSecret,
 	return created.PK, nil
 }
 
+// AppOIDC is the result of provisioning an application's OIDC provider.
+type AppOIDC struct {
+	ProviderPK    int
+	ApplicationPK string
+	ClientID      string
+	ClientSecret  string
+}
+
+// EnsureAppOIDC provisions (idempotently) a confidential OIDC provider and
+// application for a third-party app (spec §82). Returns freshly generated
+// client credentials; the app must be configured with them.
+func (c *Client) EnsureAppOIDC(ctx context.Context, name, slug, redirectURI string) (AppOIDC, error) {
+	clientID := "app-" + slug
+	clientSecret := randHex(32)
+
+	var existing struct {
+		Results []struct {
+			PK int `json:"pk"`
+		} `json:"results"`
+	}
+	q := url.Values{"client_id": []string{clientID}}
+	if err := c.Do(ctx, http.MethodGet, "/api/v3/providers/oauth2/", q, nil, &existing); err != nil {
+		return AppOIDC{}, err
+	}
+	providerPK := 0
+	if len(existing.Results) > 0 {
+		providerPK = existing.Results[0].PK
+	}
+	if providerPK == 0 {
+		flowPK, err := c.flowPKByDesignation(ctx, "authorization", "default-provider-authorization-explicit-consent")
+		if err != nil {
+			return AppOIDC{}, err
+		}
+		invalidationPK, err := c.flowPKByDesignation(ctx, "invalidation", "default-provider-invalidation-flow")
+		if err != nil {
+			return AppOIDC{}, err
+		}
+		keyPK, err := c.signingKey(ctx)
+		if err != nil {
+			return AppOIDC{}, err
+		}
+		scopes, err := c.oauthScopeMappings(ctx, "email", "profile", "openid")
+		if err != nil {
+			return AppOIDC{}, err
+		}
+		var created struct {
+			PK int `json:"pk"`
+		}
+		if err := c.Do(ctx, http.MethodPost, "/api/v3/providers/oauth2/", nil, map[string]any{
+			"name":               name,
+			"authorization_flow": flowPK,
+			"invalidation_flow":  invalidationPK,
+			"client_type":        "confidential",
+			"client_id":          clientID,
+			"client_secret":      clientSecret,
+			"redirect_uris":      []map[string]any{{"url": redirectURI, "matching_mode": "regex"}},
+			"signing_key":        keyPK,
+			"grant_types":        []string{"authorization_code"},
+			"property_mappings":  scopes,
+		}, &created); err != nil {
+			return AppOIDC{}, err
+		}
+		providerPK = created.PK
+	}
+
+	// authentik's application list ignores slug/provider query filters, so
+	// dedup by scanning the full result set client-side.
+	var all struct {
+		Results []struct {
+			PK       string `json:"pk"`
+			Slug     string `json:"slug"`
+			Provider *int   `json:"provider"`
+		} `json:"results"`
+	}
+	if err := c.Do(ctx, http.MethodGet, "/api/v3/core/applications/", url.Values{"page_size": []string{"200"}}, nil, &all); err != nil {
+		return AppOIDC{}, err
+	}
+	appPK := ""
+	for _, a := range all.Results {
+		if a.Slug == slug && a.Provider != nil && *a.Provider == providerPK {
+			appPK = a.PK
+			break
+		}
+	}
+	if appPK == "" {
+		var created struct {
+			PK string `json:"pk"`
+		}
+		if err := c.Do(ctx, http.MethodPost, "/api/v3/core/applications/", nil,
+			map[string]any{"name": name, "slug": slug, "provider": providerPK}, &created); err != nil {
+			return AppOIDC{}, err
+		}
+		appPK = created.PK
+	}
+	return AppOIDC{ProviderPK: providerPK, ApplicationPK: appPK, ClientID: clientID, ClientSecret: clientSecret}, nil
+}
+
 // EnsureApplication attaches a provider to the application with the slug.
 func (c *Client) EnsureApplication(ctx context.Context, slug string, providerPK int) error {
 	var existing struct {
@@ -308,6 +407,16 @@ func (c *Client) EnsureApplication(ctx context.Context, slug string, providerPK 
 		map[string]any{"name": "Selfu Platform", "slug": slug, "provider": providerPK}, nil)
 }
 
+// randHex returns n random bytes hex-encoded.
+func randHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
+}
+
+// firstNonEmpty returns a if non-empty else b.
 func firstNonEmpty(a, b string) string {
 	if a != "" {
 		return a

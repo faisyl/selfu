@@ -101,6 +101,7 @@ func run(logger *slog.Logger) error {
 			TXTLookup:      dns.DefaultTXTLookup,
 			MailStore:      st,
 			Chasquid:       chasquidCtrl,
+			Apps:           st,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
