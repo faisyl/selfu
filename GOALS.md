@@ -27,7 +27,8 @@ updates this file, and commits.
 | G5a Applications core | 5 | done | verified 2026-08-18: catalog, install, OIDC+app SMTP live |
 | G6a Reconciliation worker | 6 | done | verified 2026-08-18: drift healed within one tick |
 | G7 UI | 7 | done | verified 2026-08-18: browser-rendered console, form action -> DB+audit |
-| G8 Acceptance & hardening | v0 | done | verified 2026-08-18: acceptance.sh green, backup.sh artifacts, pin audit |
+| G8 Acceptance & hardening | v0 | done | verified 2026-08-18: acceptance green (https edge) |
+| G9 Production compose edge | v0 | done | verified 2026-08-18: Traefik+ACME, cold boot |
 
 ## Cross-cutting constraints (every goal)
 
