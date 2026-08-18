@@ -25,7 +25,7 @@ updates this file, and commits.
 | G3 Domains | 3 | done | verified 2026-08-17: TXT verification, containment, verified hostname gate |
 | G4a Mail core (chasquid) | 4 | done | verified 2026-08-17: real SMTP AUTH + alias + rotate |
 | G5a Applications core | 5 | done | verified 2026-08-18: catalog, install, OIDC+app SMTP live |
-| G6 Reconciliation | 6 | pending | depends on G5 (worker exists from G1) |
+| G6a Reconciliation worker | 6 | done | verified 2026-08-18: drift healed within one tick |
 | G7 UI | 7 | pending | depends on G6 |
 | G8 Acceptance & hardening | v0 | pending | depends on G7 |
 
@@ -207,6 +207,22 @@ front), the catalog UI (G7), and the deployment-events table (G6).
 ---
 
 ## G6 — Reconciliation (Phase 6)
+
+**Status (2026-08-18): G6a DONE (`7a21ce8`), G6b OPEN.** Verified live: the
+background worker (`cmd/worker`, `SELFU_RECONCILE_INTERVAL` default 30s) loops
+over active mail domains using the shared conservative `internal/recon`
+reconciler (aliases — incl. group-bound — restored; missing users suspended +
+audited, never recreated, §92). Injected drift (alias removed + `bob` user
+removed from chasquid) was **healed within one tick**: alias file restored on
+disk, bob suspended, worker audit events written. Failures are logged per
+domain and never abort the loop (retry next tick, spec §21). The API's
+on-demand `/mail/reconcile` now delegates to the same reconciler.
+
+**G6b — remaining (tracked):** external_resources observed-state sync
+(verify authentik/chasquid counterparts + `observed_hash`/`status` per §22),
+deployment-events table for the compose-up provider, and richer failure
+recovery (per-resource backoff). The docker compose `up` provider (from G5b)
+lands here too.
 
 **Objective**: ExternalResource tracking (§22), desired vs observed state §21, worker loop, retries, failure recovery, idempotency guarantee, conservative failure mode (§92).
 
