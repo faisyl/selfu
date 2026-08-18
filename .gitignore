@@ -23,3 +23,5 @@ keys/
 # misc
 *.log
 .tmp/
+# backups
+backups/

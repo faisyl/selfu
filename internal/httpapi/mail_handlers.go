@@ -204,9 +204,16 @@ func (h *Handler) reconcileMail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"domain_id":          d.ID,
 		"aliases_restored":   res.AliasesRestored + res.GroupAliases,
-		"identities_missing": res.MissingUsers,
+		"identities_missing": emptyOr(res.MissingUsers),
 		"note":               "missing identities are suspended, never recreated (spec §92)",
 	})
+}
+
+func emptyOr(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func (h *Handler) disableMail(w http.ResponseWriter, r *http.Request) {
