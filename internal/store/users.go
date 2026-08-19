@@ -58,8 +58,9 @@ func (s *Store) GetByID(ctx context.Context, id string) (domain.User, error) {
 const upsertUserSQL = `
 INSERT INTO users (id, email, display_name, status, auth_provider, auth_identity_id)
 VALUES ($1, $2, $3, 'active', $4, $5)
-ON CONFLICT (auth_provider, auth_identity_id)
-DO UPDATE SET email = EXCLUDED.email,
+ON CONFLICT (email)
+DO UPDATE SET auth_provider = EXCLUDED.auth_provider,
+              auth_identity_id = EXCLUDED.auth_identity_id,
               display_name = EXCLUDED.display_name,
               status = 'active',
               updated_at = now()
