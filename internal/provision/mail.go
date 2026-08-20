@@ -81,6 +81,7 @@ func Provisioner(ctx context.Context, st Store, mta Mail, m domain.MailIdentity)
 		AllowedFromAddresses: []string{ident.Address},
 	})
 	_ = st.SetMailIdentityStatus(ctx, ident.ID, domain.MailIdentityActive)
+	ident.Status = domain.MailIdentityActive
 	return ident, cred.ID, secret, nil
 }
 
