@@ -25,48 +25,40 @@ type OIDCClient interface {
 }
 
 // UserStore is the user persistence the handlers need.
-type UserStore interface {
-	UpsertFromOIDC(ctx context.Context, provider, subject, email, displayName string) (domain.User, bool, bool, error)
-	GetByID(ctx context.Context, id string) (domain.User, error)
-}
-
 // AuditStore persists and lists audit events.
-type AuditStore interface {
-	CreateAuditEvent(ctx context.Context, e domain.AuditEvent) error
-	ListAuditEvents(ctx context.Context, limit int) ([]domain.AuditEvent, error)
-}
-
 // Deps wires the handler dependencies; New builds the full router from it.
 type Deps struct {
 	Logger         *slog.Logger
 	Sessions       *auth.SessionStore
 	OIDC           OIDCClient
-	Users          UserStore
-	Audit          AuditStore
+	Users          store.UserStore
+	Audit          store.AuditStore
 	OIDCConfig     config.OIDCConfig
 	AfterLoginPath string
 
 	// IdentityStore is the identity persistence surface (G2).
-	IdentityStore IdentityStore
+	IdentityStore store.IdentityStore
 	// Identity provisions external identities in authentik.
 	Identity IdentityClient
 	// ProviderName labels external_resources (the authentik issuer).
 	ProviderName string
 
 	// DomainStore is the domain/hostname persistence surface (G3).
-	DomainStore DomainStore
+	DomainStore store.DomainStore
 	// DNSProvider auto-provisions records (manual by default for v0).
 	DNSProvider dns.Provider
 	// TXTLookup queries TXT records for domain verification.
 	TXTLookup dns.TXTLookup
 
 	// MailStore is the mail persistence surface (G4).
-	MailStore MailStore
+	MailStore store.MailStore
 	// Chasquid is the chasquid controller (nil = mail provisioning off).
 	Chasquid chasquid.ChasquidController
+	// Recon is the reconciliation persistence surface (G6).
+	Recon store.Recon
 
 	// Apps is the application catalog/instance persistence surface (G5).
-	Apps AppStore
+	Apps store.AppStore
 }
 
 // Handler serves the REST API and the OIDC login flow.

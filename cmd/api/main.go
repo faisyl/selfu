@@ -100,6 +100,7 @@ func run(logger *slog.Logger) error {
 			DNSProvider:    dnsProvider,
 			TXTLookup:      dns.DefaultTXTLookup,
 			MailStore:      st,
+			Recon:          st,
 			Chasquid:       chasquidCtrl,
 			Apps:           st,
 		}),

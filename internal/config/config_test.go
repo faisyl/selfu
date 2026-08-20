@@ -16,6 +16,9 @@ func setAll(t *testing.T) {
 	t.Setenv(EnvOIDCRedirectURL, "http://localhost:8080/api/v1/auth/callback")
 	t.Setenv(EnvAuthentikURL, "https://auth.example.com")
 	t.Setenv(EnvAuthentikToken, "s3cr3t-token")
+	// Hermetic: clear optional vars so ambient environment cannot leak in.
+	t.Setenv(EnvCookieSecure, "")
+	t.Setenv(EnvOIDCTLSInsecure, "")
 }
 
 func TestLoadDefaults(t *testing.T) {

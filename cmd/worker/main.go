@@ -63,11 +63,10 @@ func run(logger *slog.Logger) error {
 	ak := authentik.New(cfg.Authentik.BaseURL, cfg.Authentik.Token, cfg.Authentik.TLSInsecure)
 
 	rec := &recon.MailReconciler{
-		Mail:         st,
-		GroupMembers: groupMemberIDs(st),
-		Chasquid:     controller,
-		Audit:        st,
-		Logger:       logger,
+		Store:    st,
+		Chasquid: controller,
+		Audit:    st,
+		Logger:   logger,
 	}
 
 	logger.Info("worker starting", "interval", interval.String())
@@ -106,7 +105,7 @@ func run(logger *slog.Logger) error {
 // only surfaces applications bound to the current brand's outpost, so the
 // application wrapper can 404 while its provider (the auth boundary) is
 // healthy — the provider check is the meaningful one.
-func syncExternalResources(ctx context.Context, st *store.Store, ak *authentik.Client, provider string, logger *slog.Logger) error {
+func syncExternalResources(ctx context.Context, st store.Recon, ak *authentik.Client, provider string, logger *slog.Logger) error {
 	rows, err := st.ListExternalResourcesByProvider(ctx, provider)
 	if err != nil {
 		return err
@@ -147,7 +146,7 @@ func observedHash(resourceType, externalID string) string {
 }
 
 // reconcileOnce reconciles every active mail domain.
-func reconcileOnce(ctx context.Context, st *store.Store, rec *recon.MailReconciler, logger *slog.Logger, mailEnabled bool) error {
+func reconcileOnce(ctx context.Context, st store.Recon, rec *recon.MailReconciler, logger *slog.Logger, mailEnabled bool) error {
 	domains, err := st.ListActiveMailDomains(ctx)
 	if err != nil {
 		return err
@@ -169,19 +168,4 @@ func reconcileOnce(ctx context.Context, st *store.Store, rec *recon.MailReconcil
 		}
 	}
 	return nil
-}
-
-// groupMemberIDs adapts the store's group membership query for reconcile.
-func groupMemberIDs(st *store.Store) func(ctx context.Context, groupID string) ([]string, error) {
-	return func(ctx context.Context, groupID string) ([]string, error) {
-		members, err := st.ListGroupMembers(ctx, groupID)
-		if err != nil {
-			return nil, err
-		}
-		ids := make([]string, 0, len(members))
-		for _, m := range members {
-			ids = append(ids, m.UserID)
-		}
-		return ids, nil
-	}
 }

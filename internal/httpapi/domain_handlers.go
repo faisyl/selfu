@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -13,21 +12,6 @@ import (
 
 // DomainStore is the domain/hostname persistence surface. *store.Store
 // satisfies it.
-type DomainStore interface {
-	CreateDomain(ctx context.Context, d domain.Domain) (domain.Domain, error)
-	GetDomainByID(ctx context.Context, id string) (domain.Domain, error)
-	GetDomainByOrgFQDN(ctx context.Context, orgID, fqdn string) (domain.Domain, error)
-	ListDomainsByOrg(ctx context.Context, orgID string) ([]domain.Domain, error)
-	SetDomainStatus(ctx context.Context, id string, status domain.DomainStatus, verifiedAt *time.Time) error
-	LogVerification(ctx context.Context, domainID, method, detail string, success bool) error
-	DeleteDomain(ctx context.Context, id string) error
-
-	AddHostname(ctx context.Context, h domain.Hostname) (domain.Hostname, error)
-	GetHostnameByID(ctx context.Context, id string) (domain.Hostname, error)
-	ListHostnamesByDomain(ctx context.Context, domainID string) ([]domain.Hostname, error)
-	RemoveHostname(ctx context.Context, id string) error
-}
-
 type createDomainReq struct {
 	FQDN string `json:"fqdn"`
 }

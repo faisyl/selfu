@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -17,31 +16,6 @@ import (
 )
 
 // MailStore is the mail persistence surface. *store.Store satisfies it.
-type MailStore interface {
-	CreateMailDomain(ctx context.Context, domainID string) (domain.MailDomain, error)
-	GetMailDomainByDomainID(ctx context.Context, domainID string) (domain.MailDomain, error)
-	SetMailDomainStatus(ctx context.Context, id, status string) error
-	SetMailDomainDKIM(ctx context.Context, id, selector, record string) error
-
-	CreateMailIdentity(ctx context.Context, m domain.MailIdentity) (domain.MailIdentity, error)
-	GetMailIdentity(ctx context.Context, id string) (domain.MailIdentity, error)
-	GetMailIdentityByAddress(ctx context.Context, address string) (domain.MailIdentity, error)
-	ListMailIdentitiesByDomain(ctx context.Context, domainID string) ([]domain.MailIdentity, error)
-	SetMailIdentityStatus(ctx context.Context, id, status string) error
-
-	CreateMailCredential(ctx context.Context, c domain.MailCredential) (domain.MailCredential, error)
-	RevokeCredentialsByIdentity(ctx context.Context, identityID string) error
-
-	CreateMailAlias(ctx context.Context, a domain.MailAlias) (domain.MailAlias, error)
-	GetMailAliasByAddress(ctx context.Context, address string) (domain.MailAlias, error)
-	ListMailAliasesByDomain(ctx context.Context, domainID string) ([]domain.MailAlias, error)
-	UpdateMailAliasDestinations(ctx context.Context, id string, destinations []string) error
-	ListMailIdentitiesByUsers(ctx context.Context, orgID string, userIDs []string) ([]domain.MailIdentity, error)
-	DeleteMailAlias(ctx context.Context, id string) error
-
-	CreateMailSubmissionPolicy(ctx context.Context, p domain.MailSubmissionPolicy) error
-}
-
 // newSMTPSecret generates an independent, high-entropy SMTP credential
 // (spec §35: never reuse authentik passwords).
 func newSMTPSecret() (chasquid.Secret, error) {
@@ -168,18 +142,7 @@ func (h *Handler) reconcileMail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rec := &recon.MailReconciler{
-		Mail: h.d.MailStore,
-		GroupMembers: func(ctx context.Context, groupID string) ([]string, error) {
-			members, err := h.d.IdentityStore.ListGroupMembers(ctx, groupID)
-			if err != nil {
-				return nil, err
-			}
-			ids := make([]string, 0, len(members))
-			for _, m := range members {
-				ids = append(ids, m.UserID)
-			}
-			return ids, nil
-		},
+		Store:        h.d.Recon,
 		Chasquid:     h.d.Chasquid,
 		Audit:        h.d.Audit,
 		Logger:       h.d.Logger,

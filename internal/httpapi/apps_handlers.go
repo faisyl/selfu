@@ -16,20 +16,6 @@ import (
 )
 
 // AppStore is the application persistence surface. *store.Store satisfies it.
-type AppStore interface {
-	CreateCatalogApp(ctx context.Context, m *catalog.Manifest) (string, error)
-	GetCatalogAppByID(ctx context.Context, id string) (store.CatalogApp, error)
-	ListCatalogApps(ctx context.Context) ([]store.CatalogApp, error)
-
-	CreateApplicationInstance(ctx context.Context, orgID, catalogID, name, slug string) (string, error)
-	GetInstance(ctx context.Context, id string) (store.Instance, error)
-	ListInstancesByOrg(ctx context.Context, orgID string) ([]store.Instance, error)
-	SetInstanceStatus(ctx context.Context, id, status string) error
-
-	AddInstanceHostname(ctx context.Context, instanceID, hostname string) error
-	AddInstanceAccessGroup(ctx context.Context, instanceID, groupID string) error
-}
-
 // AppProvisioner provisions per-app OIDC (spec §82) and forward-auth
 // (spec §83) providers. *authentik.Client satisfies it (wired as
 // Deps.Identity in cmd/api).

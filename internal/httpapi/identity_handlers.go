@@ -19,37 +19,6 @@ type IdentityClient interface {
 
 // IdentityStore is the identity persistence surface the identity handlers
 // need. *store.Store satisfies it.
-type IdentityStore interface {
-	CreateOrganization(ctx context.Context, o domain.Organization) (domain.Organization, error)
-	GetOrganizationByID(ctx context.Context, id string) (domain.Organization, error)
-	ListOrganizations(ctx context.Context, limit int) ([]domain.Organization, error)
-	DeleteOrganization(ctx context.Context, id string) error
-
-	SetMembership(ctx context.Context, orgID, userID string, role domain.OrgRole) (domain.OrganizationMembership, error)
-	GetMembershipRole(ctx context.Context, orgID, userID string) (domain.OrgRole, error)
-	ListMemberships(ctx context.Context, orgID string) ([]store.Member, error)
-	RemoveMembership(ctx context.Context, orgID, userID string) error
-	RemoveAllMemberships(ctx context.Context, userID string) error
-
-	CreateGroup(ctx context.Context, g domain.Group) (domain.Group, error)
-	GetGroupByID(ctx context.Context, id string) (domain.Group, error)
-	ListGroupsByOrg(ctx context.Context, orgID string) ([]domain.Group, error)
-	DeleteGroup(ctx context.Context, id string) error
-	AddGroupMember(ctx context.Context, groupID, userID string) error
-	RemoveGroupMember(ctx context.Context, groupID, userID string) error
-	RemoveAllGroupMemberships(ctx context.Context, userID string) error
-	ListGroupMembers(ctx context.Context, groupID string) ([]store.GroupMember, error)
-
-	GetUserByEmail(ctx context.Context, email string) (domain.User, error)
-	CreateUser(ctx context.Context, email, displayName, authProvider, authIdentityID string) (domain.User, error)
-	SetUserStatus(ctx context.Context, id string, status domain.UserStatus) error
-	ListUsers(ctx context.Context, limit int) ([]domain.User, error)
-
-	UpsertExternalResource(ctx context.Context, res domain.ExternalResource) (domain.ExternalResource, error)
-	GetExternalResource(ctx context.Context, resourceType, platformObjectID string) (domain.ExternalResource, error)
-	SetExternalStatus(ctx context.Context, id, status, lastErr string) error
-}
-
 type createOrgReq struct {
 	Name string `json:"name"`
 }
