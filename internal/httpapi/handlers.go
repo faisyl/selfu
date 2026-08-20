@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"crypto/subtle"
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -195,34 +194,6 @@ func (h *Handler) oidcCallback(w http.ResponseWriter, r *http.Request) {
 // me returns the authenticated user.
 func (h *Handler) me(w http.ResponseWriter, _ *http.Request, u domain.User) {
 	writeJSON(w, http.StatusOK, u)
-}
-
-// requireAuth gates a handler behind a valid platform session.
-func (h *Handler) requireAuth(next func(http.ResponseWriter, *http.Request, domain.User)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(h.d.Sessions.CookieName())
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "missing session")
-			return
-		}
-		sess, err := h.d.Sessions.Validate(c.Value)
-		if err != nil {
-			h.d.Sessions.ClearCookie(w)
-			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or expired session")
-			return
-		}
-		u, err := h.d.Users.GetByID(r.Context(), sess.UserID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				h.d.Sessions.ClearCookie(w)
-				writeError(w, http.StatusUnauthorized, "unauthorized", "user not found")
-				return
-			}
-			h.internalError(w, err)
-			return
-		}
-		next(w, r, u)
-	}
 }
 
 func (h *Handler) internalError(w http.ResponseWriter, err error) {

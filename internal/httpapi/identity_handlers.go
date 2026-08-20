@@ -374,56 +374,6 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, users)
 }
 
-type userCtxKey struct{}
-
-func withUserReq(r *http.Request, u domain.User) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), userCtxKey{}, u))
-}
-
-func rUser(r *http.Request) domain.User {
-	u, _ := r.Context().Value(userCtxKey{}).(domain.User)
-	return u
-}
-
-// authn authenticates the request, stores the user in the context, and
-// delegates to next on success (401 otherwise).
-func (h *Handler) authn(next func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		u, ok := h.authenticate(w, r)
-		if !ok {
-			return
-		}
-		next(w, withUserReq(r, u))
-	}
-}
-
-func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (domain.User, bool) {
-	c, err := r.Cookie(h.d.Sessions.CookieName())
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "missing session")
-		return domain.User{}, false
-	}
-	sess, err := h.d.Sessions.Validate(c.Value)
-	if err != nil {
-		h.d.Sessions.ClearCookie(w)
-		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or expired session")
-		return domain.User{}, false
-	}
-	u, err := h.d.Users.GetByID(r.Context(), sess.UserID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			h.d.Sessions.ClearCookie(w)
-			writeError(w, http.StatusUnauthorized, "unauthorized", "user not found")
-			return domain.User{}, false
-		}
-		h.internalError(w, err)
-		return domain.User{}, false
-	}
-	return u, true
-}
-
-// requireOrgRole ensures the authenticated user may act in orgID at the
-// given role level. Writes 401/403 on failure and returns false.
 func (h *Handler) requireOrgRole(w http.ResponseWriter, r *http.Request, orgID string, required domain.OrgRole) bool {
 	u := rUser(r)
 	if u.IsAdmin {

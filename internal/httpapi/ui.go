@@ -72,33 +72,6 @@ func (h *Handler) uiRender(w http.ResponseWriter, content string, data any) {
 	}
 }
 
-// uiAuth gates an HTML page: unauthenticated browsers are redirected to the
-// OIDC login (spec §15), never shown a 401.
-func (h *Handler) uiAuth(w http.ResponseWriter, r *http.Request) (domain.User, bool) {
-	if u, ok := h.currentUser(r); ok {
-		return u, true
-	}
-	http.Redirect(w, r, "/api/v1/auth/login", http.StatusFound)
-	return domain.User{}, false
-}
-
-// currentUser validates the session cookie without writing a response.
-func (h *Handler) currentUser(r *http.Request) (domain.User, bool) {
-	c, err := r.Cookie(h.d.Sessions.CookieName())
-	if err != nil {
-		return domain.User{}, false
-	}
-	sess, err := h.d.Sessions.Validate(c.Value)
-	if err != nil {
-		return domain.User{}, false
-	}
-	u, err := h.d.Users.GetByID(r.Context(), sess.UserID)
-	if err != nil {
-		return domain.User{}, false
-	}
-	return u, true
-}
-
 func (h *Handler) uiDashboard(w http.ResponseWriter, r *http.Request) {
 	u, ok := h.uiAuth(w, r)
 	if !ok {
