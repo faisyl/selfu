@@ -102,6 +102,7 @@ func run(logger *slog.Logger) error {
 			MailStore:      st,
 			Recon:          st,
 			Chasquid:       chasquidCtrl,
+			MailProvision:  chasquidCtrl,
 			Apps:           st,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,

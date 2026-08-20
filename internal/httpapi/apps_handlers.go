@@ -5,12 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"selfu/internal/authentik"
 	"selfu/internal/catalog"
 	"selfu/internal/chasquid"
 	"selfu/internal/domain"
+	"selfu/internal/provision"
 	"selfu/internal/store"
 	"selfu/internal/traefik"
 )
@@ -242,41 +242,24 @@ func (h *Handler) listApplications(w http.ResponseWriter, r *http.Request) {
 // its sender policy for an application (spec §44–46, §70–73). Returns the
 // credential id and the secret (shown once).
 func (h *Handler) provisionAppIdentity(ctx context.Context, orgID, domID, instanceID, addr string) (string, chasquid.Secret, error) {
-	secret, err := newSMTPSecret()
-	if err != nil {
-		return "", "", err
-	}
-	local := strings.SplitN(addr, "@", 2)[0]
-	ident, err := h.d.MailStore.CreateMailIdentity(ctx, domain.MailIdentity{
+	ident, credID, secret, err := provision.Provisioner(ctx, h.d.MailStore, h.d.MailProvision, domain.MailIdentity{
 		OrganizationID:   orgID,
 		DomainID:         domID,
-		LocalPart:        local,
 		Address:          addr,
 		ChasquidUsername: addr,
-		Status:           domain.MailIdentityProvisioning,
 	})
 	if err != nil {
 		return "", "", err
 	}
-	cred, err := h.d.MailStore.CreateMailCredential(ctx, domain.MailCredential{
-		MailIdentityID:    ident.ID,
-		SecretFingerprint: fingerprint(secret),
-	})
-	if err != nil {
-		return "", "", err
-	}
-	if err := h.d.Chasquid.AddUser(ctx, addr, secret); err != nil {
-		return "", "", err
-	}
-	_ = h.d.Chasquid.EnsureSenderPolicy(ctx, addr, []string{addr})
+	// Tag the policy row with the owning app instance (§46): the provisioner
+	// already wrote a sender policy; app-instance linkage is recorded here.
 	_ = h.d.MailStore.CreateMailSubmissionPolicy(ctx, domain.MailSubmissionPolicy{
 		MailIdentityID:        ident.ID,
-		CredentialID:          cred.ID,
+		CredentialID:          credID,
 		AllowedFromAddresses:  []string{addr},
 		ApplicationInstanceID: new(instanceID),
 	})
-	_ = h.d.MailStore.SetMailIdentityStatus(ctx, ident.ID, domain.MailIdentityActive)
-	return cred.ID, secret, nil
+	return credID, secret, nil
 }
 
 // findVerifiedOrgDomain returns a verified org domain containing hostname.

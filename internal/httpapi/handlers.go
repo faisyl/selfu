@@ -14,6 +14,7 @@ import (
 	"selfu/internal/config"
 	"selfu/internal/dns"
 	"selfu/internal/domain"
+	"selfu/internal/provision"
 	"selfu/internal/store"
 	"selfu/internal/version"
 )
@@ -54,6 +55,8 @@ type Deps struct {
 	MailStore store.MailStore
 	// Chasquid is the chasquid controller (nil = mail provisioning off).
 	Chasquid chasquid.ChasquidController
+	// MailProvision is the MTA seam for mailbox provisioning (G4).
+	MailProvision provision.Mail
 	// Recon is the reconciliation persistence surface (G6).
 	Recon store.Recon
 

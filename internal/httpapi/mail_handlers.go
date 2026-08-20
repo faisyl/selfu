@@ -1,40 +1,17 @@
 package httpapi
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
 
-	"selfu/internal/chasquid"
 	"selfu/internal/domain"
+	"selfu/internal/provision"
 	"selfu/internal/recon"
 	"selfu/internal/store"
 )
 
 // MailStore is the mail persistence surface. *store.Store satisfies it.
-// newSMTPSecret generates an independent, high-entropy SMTP credential
-// (spec §35: never reuse authentik passwords).
-func newSMTPSecret() (chasquid.Secret, error) {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	s := base64.RawURLEncoding.EncodeToString(b)
-	if len(s) < 24 {
-		return "", errors.New("generated secret too short")
-	}
-	return chasquid.Secret(s), nil
-}
-
-func fingerprint(s chasquid.Secret) string {
-	h := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(h[:])
-}
-
 // enableMail implements spec §27: a verified domain becomes a mail domain.
 func (h *Handler) enableMail(w http.ResponseWriter, r *http.Request) {
 	d, err := h.d.DomainStore.GetDomainByID(r.Context(), r.PathValue("id"))
@@ -249,53 +226,22 @@ func (h *Handler) createMailIdentity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	secret, err := newSMTPSecret()
-	if err != nil {
-		h.internalError(w, err)
-		return
-	}
-	ident, err := h.d.MailStore.CreateMailIdentity(r.Context(), domain.MailIdentity{
+	ident, credID, secret, err := provision.Provisioner(r.Context(), h.d.MailStore, h.d.MailProvision, domain.MailIdentity{
 		OrganizationID:   d.OrganizationID,
 		UserID:           optionalStringPtr(req.UserID),
 		DomainID:         d.ID,
-		LocalPart:        strings.Split(addr, "@")[0],
 		Address:          addr,
 		ChasquidUsername: addr,
-		Status:           domain.MailIdentityProvisioning,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			writeError(w, http.StatusConflict, "conflict", "address already in use")
 			return
 		}
-		h.internalError(w, err)
-		return
-	}
-	cred, err := h.d.MailStore.CreateMailCredential(r.Context(), domain.MailCredential{
-		MailIdentityID:    ident.ID,
-		SecretFingerprint: fingerprint(secret),
-	})
-	if err != nil {
-		h.internalError(w, err)
-		return
-	}
-	if err := h.d.Chasquid.AddUser(r.Context(), addr, secret); err != nil {
-		h.d.Logger.Warn("chasquid add user failed", "err", err, "address", addr)
-		_ = h.d.MailStore.SetMailIdentityStatus(r.Context(), ident.ID, domain.MailIdentityDeleted)
 		writeError(w, http.StatusUnprocessableEntity, "provisioning_failed", "could not provision the mailbox")
 		return
 	}
-	// Sender policy: this credential may only send as its own address
-	// (spec §46, §50) — enforced by the post-data hook (G4b).
-	_ = h.d.MailStore.CreateMailSubmissionPolicy(r.Context(), domain.MailSubmissionPolicy{
-		MailIdentityID:       ident.ID,
-		CredentialID:         cred.ID,
-		AllowedFromAddresses: []string{addr},
-	})
-	if err := h.d.Chasquid.EnsureSenderPolicy(r.Context(), addr, []string{addr}); err != nil {
-		h.d.Logger.Warn("sender policy install failed", "err", err, "address", addr)
-	}
-	_ = h.d.MailStore.SetMailIdentityStatus(r.Context(), ident.ID, domain.MailIdentityActive)
+	cred := domain.MailCredential{ID: credID}
 
 	h.audit(r.Context(), domain.AuditEvent{
 		ActorUserID:  new(rUser(r).ID),
@@ -324,28 +270,13 @@ func (h *Handler) rotateMailCredential(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "mail_unavailable", "mail provisioning is not configured")
 		return
 	}
-	secret, err := newSMTPSecret()
+	credID, secret, err := provision.Rotate(r.Context(), h.d.MailStore, h.d.MailProvision, ident)
 	if err != nil {
-		h.internalError(w, err)
-		return
-	}
-	if err := h.d.Chasquid.ChangePassword(r.Context(), ident.ChasquidUsername, secret); err != nil {
-		h.d.Logger.Warn("chasquid change password failed", "err", err, "address", ident.ChasquidUsername)
+		h.d.Logger.Warn("credential rotation failed", "err", err, "address", ident.ChasquidUsername)
 		writeError(w, http.StatusUnprocessableEntity, "rotation_failed", "could not rotate the credential")
 		return
 	}
-	if err := h.d.MailStore.RevokeCredentialsByIdentity(r.Context(), ident.ID); err != nil {
-		h.internalError(w, err)
-		return
-	}
-	cred, err := h.d.MailStore.CreateMailCredential(r.Context(), domain.MailCredential{
-		MailIdentityID:    ident.ID,
-		SecretFingerprint: fingerprint(secret),
-	})
-	if err != nil {
-		h.internalError(w, err)
-		return
-	}
+	cred := domain.MailCredential{ID: credID}
 	h.audit(r.Context(), domain.AuditEvent{
 		ActorUserID:  new(rUser(r).ID),
 		Action:       "mail.identity.credential_rotated",
