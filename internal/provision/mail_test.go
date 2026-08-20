@@ -2,7 +2,6 @@ package provision
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"selfu/internal/chasquid"
@@ -24,7 +23,7 @@ func (f *fakeStore) CreateMailIdentity(_ context.Context, m domain.MailIdentity)
 		return domain.MailIdentity{}, f.errCreate
 	}
 	f.nextID++
-	m.ID = "id-" + strings.Repeat("0", 4)
+	m.ID = "id-1"
 	f.created = append(f.created, m)
 	if m.Status == "" {
 		m.Status = domain.MailIdentityProvisioning
