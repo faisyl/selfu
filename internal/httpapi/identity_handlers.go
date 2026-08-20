@@ -24,8 +24,6 @@ type IdentityProvisioner interface {
 	EnsureForwardAuth(ctx context.Context, name, slug, externalHost string) (authentik.AppOIDC, error)
 }
 
-// IdentityStore is the identity persistence surface the identity handlers
-// need. *store.Store satisfies it.
 type createOrgReq struct {
 	Name string `json:"name"`
 }

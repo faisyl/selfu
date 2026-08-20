@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 
-	"selfu/internal/auth"
 	"selfu/internal/domain"
 )
 
@@ -27,27 +26,6 @@ func (h *Handler) currentSessionUser(r *http.Request) (domain.User, bool) {
 		return domain.User{}, false
 	}
 	u, err := h.d.Users.GetByID(r.Context(), sess.UserID)
-	if err != nil {
-		return domain.User{}, false
-	}
-	return u, true
-}
-
-// authenticate resolves the platform user from the session cookie without
-// writing any response. ok=false means unauthenticated (missing, invalid,
-// expired, or the user no longer exists); the caller decides 401 vs 302.
-func authenticate(r *http.Request, cookieName string,
-	validate func(string) (*auth.Session, error),
-	getByID func(context.Context, string) (domain.User, error)) (domain.User, bool) {
-	c, err := r.Cookie(cookieName)
-	if err != nil {
-		return domain.User{}, false
-	}
-	sess, err := validate(c.Value)
-	if err != nil {
-		return domain.User{}, false
-	}
-	u, err := getByID(r.Context(), sess.UserID)
 	if err != nil {
 		return domain.User{}, false
 	}

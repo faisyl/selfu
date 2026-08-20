@@ -201,7 +201,7 @@ func (h *Handler) createMailIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	md, err := h.d.MailStore.GetMailDomainByDomainID(r.Context(), d.ID)
-	if err != nil || md.Status != "active" {
+	if err != nil || md.Status != domain.MailDomainActive {
 		writeError(w, http.StatusConflict, "mail_not_active", "mail must be enabled and active for this domain")
 		return
 	}

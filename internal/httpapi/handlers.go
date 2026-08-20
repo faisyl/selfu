@@ -25,7 +25,6 @@ type OIDCClient interface {
 }
 
 // UserStore is the user persistence the handlers need.
-// AuditStore persists and lists audit events.
 // Deps wires the handler dependencies; New builds the full router from it.
 type Deps struct {
 	Logger         *slog.Logger
