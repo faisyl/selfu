@@ -5,16 +5,23 @@ import (
 	"errors"
 	"net/http"
 
+	"selfu/internal/authentik"
 	"selfu/internal/domain"
 	"selfu/internal/store"
 )
 
-// IdentityClient provisions external identity resources in authentik
-// (spec §16, §79).
-type IdentityClient interface {
+// IdentityProvisioner provisions external identity resources in authentik
+// (spec §16, §79): users/groups for accounts, plus per-app OIDC and
+// forward-auth providers (spec §82, §83). One interface replaces the
+// previous narrow IdentityProvisioner + a separate AppProvisioner that forced a
+// runtime type-assert in the installer — no silent-degrade when wiring
+// forgets a method.
+type IdentityProvisioner interface {
 	EnsureUser(ctx context.Context, email, displayName string) (pk string, created bool, err error)
 	SetUserActive(ctx context.Context, pk string, active bool) error
 	EnsureGroup(ctx context.Context, name string) (pk string, err error)
+	EnsureAppOIDC(ctx context.Context, name, slug, redirectURI string) (authentik.AppOIDC, error)
+	EnsureForwardAuth(ctx context.Context, name, slug, externalHost string) (authentik.AppOIDC, error)
 }
 
 // IdentityStore is the identity persistence surface the identity handlers

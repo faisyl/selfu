@@ -35,8 +35,11 @@ func (s *Store) GetMailDomainByDomainID(ctx context.Context, domainID string) (d
 }
 
 // SetMailDomainStatus updates a mail domain's lifecycle status.
-func (s *Store) SetMailDomainStatus(ctx context.Context, id, status string) error {
+func (s *Store) SetMailDomainStatus(ctx context.Context, id string, status domain.MailDomainStatus) error {
 	_, err := s.pool.Exec(ctx, setMailDomainStatusSQL, status, id)
+	if !status.Valid() {
+		return fmt.Errorf("invalid mail domain status %q", status)
+	}
 	if err != nil {
 		return fmt.Errorf("set mail domain status: %w", err)
 	}
@@ -114,6 +117,22 @@ func (s *Store) SetMailIdentityStatus(ctx context.Context, id, status string) er
 	_, err := s.pool.Exec(ctx, setMailIdentityStatusSQL, status, id)
 	if err != nil {
 		return fmt.Errorf("set mail identity status: %w", err)
+	}
+	return nil
+}
+
+// ValidateAliasDestinations enforces the same-organization routing invariant
+// (spec §39): every destination must be an active mail identity of the same
+// organization. Returns ErrForeignDestination otherwise.
+func (s *Store) ValidateAliasDestinations(ctx context.Context, orgID string, destinations []string) error {
+	for _, dest := range destinations {
+		idn, err := s.GetMailIdentityByAddress(ctx, dest)
+		if err != nil {
+			return fmt.Errorf("%w: %s is not a mail identity", ErrForeignDestination, dest)
+		}
+		if idn.OrganizationID != orgID {
+			return fmt.Errorf("%w: %s belongs to another organization", ErrForeignDestination, dest)
+		}
 	}
 	return nil
 }

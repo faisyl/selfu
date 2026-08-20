@@ -39,7 +39,7 @@ type Deps struct {
 	// IdentityStore is the identity persistence surface (G2).
 	IdentityStore store.IdentityStore
 	// Identity provisions external identities in authentik.
-	Identity IdentityClient
+	Identity IdentityProvisioner
 	// ProviderName labels external_resources (the authentik issuer).
 	ProviderName string
 

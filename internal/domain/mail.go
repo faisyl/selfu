@@ -8,17 +8,35 @@ import (
 	"time"
 )
 
+// MailDomainStatus is the lifecycle of a mail domain (spec §27).
+type MailDomainStatus string
+
+const (
+	MailDomainProvisioning MailDomainStatus = "provisioning"
+	MailDomainActive       MailDomainStatus = "active"
+	MailDomainDisabled     MailDomainStatus = "disabled"
+)
+
+// Valid reports whether s is a known mail domain status.
+func (s MailDomainStatus) Valid() bool {
+	switch s {
+	case MailDomainProvisioning, MailDomainActive, MailDomainDisabled:
+		return true
+	}
+	return false
+}
+
 // MailDomain mirrors a verified platform domain used for mail (spec §26).
 type MailDomain struct {
-	ID        string    `json:"id"`
-	DomainID  string    `json:"domain_id"`
-	Status    string    `json:"status"`
-	Inbound   string    `json:"inbound_status"`
-	Outbound  string    `json:"outbound_status"`
-	TLS       string    `json:"tls_status"`
-	DKIM      string    `json:"dkim_status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string           `json:"id"`
+	DomainID  string           `json:"domain_id"`
+	Status    MailDomainStatus `json:"status"`
+	Inbound   string           `json:"inbound_status"`
+	Outbound  string           `json:"outbound_status"`
+	TLS       string           `json:"tls_status"`
+	DKIM      string           `json:"dkim_status"`
+	CreatedAt time.Time        `json:"created_at"`
+	UpdatedAt time.Time        `json:"updated_at"`
 }
 
 // ValidateLocalPart enforces the RFC 5321-ish "dot-atom" local part used by

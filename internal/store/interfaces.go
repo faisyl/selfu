@@ -80,7 +80,7 @@ type DomainStore interface {
 type MailStore interface {
 	CreateMailDomain(ctx context.Context, domainID string) (domain.MailDomain, error)
 	GetMailDomainByDomainID(ctx context.Context, domainID string) (domain.MailDomain, error)
-	SetMailDomainStatus(ctx context.Context, id, status string) error
+	SetMailDomainStatus(ctx context.Context, id string, status domain.MailDomainStatus) error
 	SetMailDomainDKIM(ctx context.Context, id, selector, record string) error
 
 	CreateMailIdentity(ctx context.Context, m domain.MailIdentity) (domain.MailIdentity, error)
@@ -100,6 +100,8 @@ type MailStore interface {
 	DeleteMailAlias(ctx context.Context, id string) error
 
 	CreateMailSubmissionPolicy(ctx context.Context, p domain.MailSubmissionPolicy) error
+
+	ValidateAliasDestinations(ctx context.Context, orgID string, destinations []string) error
 }
 
 // AppStore is the application catalog/instance persistence surface.

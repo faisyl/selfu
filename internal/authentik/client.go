@@ -238,6 +238,39 @@ func (c *Client) oauthScopeMappings(ctx context.Context, names ...string) ([]str
 	return pks, nil
 }
 
+// oidcProviderParams resolves the flow/signing-key/scope deps shared by every
+// OAuth2 provider creation and returns the common body fields (spec §82).
+func (c *Client) oidcProviderParams(ctx context.Context, name, clientID, clientSecret string, redirectURIs []map[string]any) (map[string]any, error) {
+	flowPK, err := c.flowPKByDesignation(ctx, "authorization", "default-provider-authorization-explicit-consent")
+	if err != nil {
+		return nil, err
+	}
+	invalidationPK, err := c.flowPKByDesignation(ctx, "invalidation", "default-provider-invalidation-flow")
+	if err != nil {
+		return nil, err
+	}
+	keyPK, err := c.signingKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scopes, err := c.oauthScopeMappings(ctx, "email", "profile", "openid")
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"name":               name,
+		"authorization_flow": flowPK,
+		"invalidation_flow":  invalidationPK,
+		"client_type":        "confidential",
+		"client_id":          clientID,
+		"client_secret":      clientSecret,
+		"redirect_uris":      redirectURIs,
+		"signing_key":        keyPK,
+		"grant_types":        []string{"authorization_code"},
+		"property_mappings":  scopes,
+	}, nil
+}
+
 // EnsureOIDCProvider creates or reuses the confidential OAuth2/OIDC provider
 // for the platform client and returns its integer pk.
 func (c *Client) EnsureOIDCProvider(ctx context.Context, clientID, clientSecret, redirectURL, slug string) (int, error) {
@@ -254,34 +287,10 @@ func (c *Client) EnsureOIDCProvider(ctx context.Context, clientID, clientSecret,
 		return existing.Results[0].PK, nil
 	}
 
-	flowPK, err := c.flowPKByDesignation(ctx, "authorization", "default-provider-authorization-explicit-consent")
+	body, err := c.oidcProviderParams(ctx, slug, clientID, clientSecret,
+		[]map[string]any{{"url": redirectURL, "matching_mode": "strict"}})
 	if err != nil {
 		return 0, err
-	}
-	invalidationPK, err := c.flowPKByDesignation(ctx, "invalidation", "default-provider-invalidation-flow")
-	if err != nil {
-		return 0, err
-	}
-	keyPK, err := c.signingKey(ctx)
-	if err != nil {
-		return 0, err
-	}
-	scopes, err := c.oauthScopeMappings(ctx, "email", "profile", "openid")
-	if err != nil {
-		return 0, err
-	}
-
-	body := map[string]any{
-		"name":               slug,
-		"authorization_flow": flowPK,
-		"invalidation_flow":  invalidationPK,
-		"client_type":        "confidential",
-		"client_id":          clientID,
-		"client_secret":      clientSecret,
-		"redirect_uris":      []map[string]any{{"url": redirectURL, "matching_mode": "strict"}},
-		"signing_key":        keyPK,
-		"grant_types":        []string{"authorization_code"},
-		"property_mappings":  scopes,
 	}
 	var created struct {
 		PK int `json:"pk"`
@@ -321,37 +330,15 @@ func (c *Client) EnsureAppOIDC(ctx context.Context, name, slug, redirectURI stri
 		providerPK = existing.Results[0].PK
 	}
 	if providerPK == 0 {
-		flowPK, err := c.flowPKByDesignation(ctx, "authorization", "default-provider-authorization-explicit-consent")
-		if err != nil {
-			return AppOIDC{}, err
-		}
-		invalidationPK, err := c.flowPKByDesignation(ctx, "invalidation", "default-provider-invalidation-flow")
-		if err != nil {
-			return AppOIDC{}, err
-		}
-		keyPK, err := c.signingKey(ctx)
-		if err != nil {
-			return AppOIDC{}, err
-		}
-		scopes, err := c.oauthScopeMappings(ctx, "email", "profile", "openid")
+		body, err := c.oidcProviderParams(ctx, name, clientID, clientSecret,
+			[]map[string]any{{"url": redirectURI, "matching_mode": "regex"}})
 		if err != nil {
 			return AppOIDC{}, err
 		}
 		var created struct {
 			PK int `json:"pk"`
 		}
-		if err := c.Do(ctx, http.MethodPost, "/api/v3/providers/oauth2/", nil, map[string]any{
-			"name":               name,
-			"authorization_flow": flowPK,
-			"invalidation_flow":  invalidationPK,
-			"client_type":        "confidential",
-			"client_id":          clientID,
-			"client_secret":      clientSecret,
-			"redirect_uris":      []map[string]any{{"url": redirectURI, "matching_mode": "regex"}},
-			"signing_key":        keyPK,
-			"grant_types":        []string{"authorization_code"},
-			"property_mappings":  scopes,
-		}, &created); err != nil {
+		if err := c.Do(ctx, http.MethodPost, "/api/v3/providers/oauth2/", nil, body, &created); err != nil {
 			return AppOIDC{}, err
 		}
 		providerPK = created.PK

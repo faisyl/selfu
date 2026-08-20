@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"selfu/internal/authentik"
 	"selfu/internal/catalog"
 	"selfu/internal/chasquid"
 	"selfu/internal/domain"
@@ -16,14 +15,6 @@ import (
 )
 
 // AppStore is the application persistence surface. *store.Store satisfies it.
-// AppProvisioner provisions per-app OIDC (spec §82) and forward-auth
-// (spec §83) providers. *authentik.Client satisfies it (wired as
-// Deps.Identity in cmd/api).
-type AppProvisioner interface {
-	EnsureAppOIDC(ctx context.Context, name, slug, redirectURI string) (authentik.AppOIDC, error)
-	EnsureForwardAuth(ctx context.Context, name, slug, externalHost string) (authentik.AppOIDC, error)
-}
-
 func (h *Handler) listCatalog(w http.ResponseWriter, r *http.Request) {
 	if !rUser(r).IsAdmin {
 		writeError(w, http.StatusForbidden, "forbidden", "platform admin required")
@@ -136,10 +127,7 @@ func (h *Handler) createApplication(w http.ResponseWriter, r *http.Request) {
 	// OIDC: provision an authentik provider + application (§82).
 	switch {
 	case m.Authentication.Mode == catalog.AuthOIDC && h.d.Identity != nil:
-		p, ok := h.d.Identity.(AppProvisioner)
-		if !ok {
-			break
-		}
+		p := h.d.Identity
 		redirect := "https://" + hostname + ".*"
 		oidc, err := p.EnsureAppOIDC(r.Context(), name, slug, redirect)
 		if err != nil {
@@ -168,10 +156,7 @@ func (h *Handler) createApplication(w http.ResponseWriter, r *http.Request) {
 		}
 	case forwardAuth && h.d.Identity != nil:
 		// Forward-auth provider + application (spec §83).
-		p, ok := h.d.Identity.(AppProvisioner)
-		if !ok {
-			break
-		}
+		p := h.d.Identity
 		fa, err := p.EnsureForwardAuth(r.Context(), name, slug, "https://"+hostname)
 		if err != nil {
 			h.d.Logger.Warn("app forward-auth provisioning failed", "err", err, "instance", instanceID)

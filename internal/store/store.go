@@ -66,6 +66,10 @@ var ErrNotFound = errors.New("store: not found")
 // constraint (e.g. duplicate slug or email).
 var ErrConflict = errors.New("store: conflict")
 
+// ErrForeignDestination is returned when an alias destination is not a mail
+// identity of the same organization (spec §39).
+var ErrForeignDestination = errors.New("store: cross-organization alias destination")
+
 // isUnique reports whether err is a PostgreSQL unique-violation (23505),
 // including when wrapped.
 func isUnique(err error) bool {

@@ -46,7 +46,7 @@ func (h *Handler) enableMail(w http.ResponseWriter, r *http.Request) {
 	// Provision the chasquid domain (spec §29).
 	if err := h.d.Chasquid.EnsureDomain(r.Context(), d.FQDN); err != nil {
 		h.d.Logger.Warn("chasquid ensure domain failed", "err", err, "domain", d.FQDN)
-		_ = h.d.MailStore.SetMailDomainStatus(r.Context(), md.ID, "disabled")
+		_ = h.d.MailStore.SetMailDomainStatus(r.Context(), md.ID, domain.MailDomainDisabled)
 		writeError(w, http.StatusUnprocessableEntity, "provisioning_failed", "could not provision the mail domain")
 		return
 	}
@@ -60,7 +60,7 @@ func (h *Handler) enableMail(w http.ResponseWriter, r *http.Request) {
 	} else {
 		h.d.Logger.Warn("dkim provisioning failed", "err", err, "domain", d.FQDN)
 	}
-	_ = h.d.MailStore.SetMailDomainStatus(r.Context(), md.ID, "active")
+	_ = h.d.MailStore.SetMailDomainStatus(r.Context(), md.ID, domain.MailDomainActive)
 
 	h.audit(r.Context(), domain.AuditEvent{
 		ActorUserID:  new(rUser(r).ID),
@@ -171,7 +171,7 @@ func (h *Handler) disableMail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Disable, do not destroy (spec §63: retain mailbox/data by default).
-	if err := h.d.MailStore.SetMailDomainStatus(r.Context(), md.ID, "disabled"); err != nil {
+	if err := h.d.MailStore.SetMailDomainStatus(r.Context(), md.ID, domain.MailDomainDisabled); err != nil {
 		h.internalError(w, err)
 		return
 	}
@@ -363,14 +363,11 @@ func (h *Handler) createMailAlias(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	// Destinations must be mail identities of THIS organization.
-	for _, dest := range req.Destinations {
-		idn, err := h.d.MailStore.GetMailIdentityByAddress(r.Context(), dest)
-		if err != nil || idn.OrganizationID != d.OrganizationID {
-			writeError(w, http.StatusBadRequest, "invalid_destination",
-				"destination "+dest+" is not a mail identity of this organization (cross-organization routing is disabled)")
-			return
-		}
+	// Same-organization routing invariant (§39) — owned by the store module.
+	if err := h.d.MailStore.ValidateAliasDestinations(r.Context(), d.OrganizationID, req.Destinations); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_destination",
+			"destination is not a mail identity of this organization (cross-organization routing is disabled)")
+		return
 	}
 	if h.d.Chasquid == nil {
 		writeError(w, http.StatusUnprocessableEntity, "mail_unavailable", "mail provisioning is not configured")
