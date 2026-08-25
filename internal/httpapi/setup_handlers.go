@@ -187,6 +187,14 @@ func (h *Handler) setupStatus(w http.ResponseWriter, r *http.Request) {
 				"id": d.ID, "fqdn": d.FQDN, "status": string(d.Status),
 			}
 			resp["provider"] = inst.AccessProvider
+			// Surface the background auto-verify poller state so the
+			// wizard can show live progress without manual action.
+			if lc, res := h.verifySnapshot(); !lc.IsZero() {
+				resp["auto_verify"] = map[string]any{
+					"last_check":  lc,
+					"last_result": res,
+				}
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -369,86 +377,14 @@ func (h *Handler) createSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 // verifySetup verifies the pending primary domain's TXT record and, on
-// success, marks the installation onboarded.
+// success, marks the installation onboarded. The logic lives in
+// runVerifySetup so the background auto-verify poller reuses it verbatim.
 func (h *Handler) verifySetup(w http.ResponseWriter, r *http.Request) {
 	admin := rUser(r)
 	if !admin.IsAdmin {
 		writeError(w, http.StatusForbidden, "forbidden", "platform admin required")
 		return
 	}
-	inst, err := h.d.Setup.GetInstallation(r.Context())
-	if err != nil {
-		h.internalError(w, err)
-		return
-	}
-	if inst.Onboarded() {
-		writeError(w, http.StatusConflict, "already_onboarded", "installation is already onboarded")
-		return
-	}
-	if inst.PrimaryDomainID == "" {
-		writeError(w, http.StatusConflict, "no_primary_domain", "run the setup wizard first")
-		return
-	}
-	d, err := h.d.DomainStore.GetDomainByID(r.Context(), inst.PrimaryDomainID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "primary domain not found")
-		return
-	}
-	if d.Status == domain.DomainVerified {
-		// Already verified; completing is idempotent.
-		if err := h.d.Setup.SetInstallationOnboarded(r.Context(), time.Now().UTC()); err != nil {
-			h.internalError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": string(domain.DomainVerified), "onboarded": true})
-		return
-	}
-
-	recordName := dns.VerifyRecordName(d.FQDN)
-	recordValue := dns.TokenTXTValue(d.VerificationToken)
-	if h.d.TXTLookup == nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "DNS lookup unavailable")
-		return
-	}
-	txts, err := h.d.TXTLookup(r.Context(), recordName)
-	if err != nil {
-		_ = h.d.DomainStore.LogVerification(r.Context(), d.ID, d.VerificationMethod, err.Error(), false)
-		writeError(w, http.StatusUnprocessableEntity, "lookup_failed", "could not query DNS for the verification record")
-		return
-	}
-	verified := false
-	for _, t := range txts {
-		if t == recordValue {
-			verified = true
-			break
-		}
-	}
-	if !verified {
-		_ = h.d.DomainStore.LogVerification(r.Context(), d.ID, d.VerificationMethod, "record not found", false)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":   string(d.Status),
-			"verified": false,
-			"hint":     "set TXT " + recordName + " to " + recordValue,
-		})
-		return
-	}
-
-	now := time.Now().UTC()
-	if err := h.d.DomainStore.SetDomainStatus(r.Context(), d.ID, domain.DomainVerified, &now); err != nil {
-		h.internalError(w, err)
-		return
-	}
-	_ = h.d.DomainStore.LogVerification(r.Context(), d.ID, d.VerificationMethod, "verified", true)
-	if err := h.d.Setup.SetInstallationOnboarded(r.Context(), now); err != nil {
-		h.internalError(w, err)
-		return
-	}
-	h.audit(r.Context(), domain.AuditEvent{
-		ActorUserID:  &admin.ID,
-		Action:       "setup.onboarded",
-		ResourceType: "domain",
-		ResourceID:   d.ID,
-		Details:      map[string]any{"fqdn": d.FQDN},
-	})
-	writeJSON(w, http.StatusOK, map[string]any{"status": string(domain.DomainVerified), "onboarded": true})
+	code, payload := h.runVerifySetup(r.Context(), admin.ID)
+	writeJSON(w, code, payload)
 }

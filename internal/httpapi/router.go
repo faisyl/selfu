@@ -2,10 +2,26 @@ package httpapi
 
 import "net/http"
 
+// NewHandler assembles the API handler (same as New) while exposing the
+// concrete *Handler so callers can start the background auto-verify
+// poller.
+func NewHandler(d Deps) *Handler {
+	return &Handler{d: d}
+}
+
 // New assembles the full API router with middleware.
 func New(d Deps) http.Handler {
-	h := &Handler{d: d}
+	return (&Handler{d: d}).buildRouter()
+}
 
+// BuildRouter exposes the assembled router for callers holding the
+// concrete *Handler (e.g. the API main that starts the verification
+// poller).
+func (h *Handler) BuildRouter() http.Handler { return h.buildRouter() }
+
+// buildRouter wires the routes.
+func (h *Handler) buildRouter() http.Handler {
+	d := h.d
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /favicon.ico", h.favicon)
 	mux.HandleFunc("GET /api/v1/health", h.health)

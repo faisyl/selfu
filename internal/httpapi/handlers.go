@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -90,6 +92,12 @@ type Deps struct {
 // Handler serves the REST API and the OIDC login flow.
 type Handler struct {
 	d Deps
+
+	// Background auto-verify poller state (verify_poll.go); read by
+	// setupStatus to surface the last attempt.
+	pollMu           sync.Mutex
+	lastVerifyCheck  time.Time
+	lastVerifyResult string
 }
 
 // audit writes an audit event; failures are logged but never fail the

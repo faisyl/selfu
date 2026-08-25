@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -85,35 +86,47 @@ func run(logger *slog.Logger) error {
 		chasquidCtrl = chasquid.NewAgentClient(cfg.Mail.AgentURL, cfg.Mail.AgentToken)
 	}
 
+	apiHandler := httpapi.NewHandler(httpapi.Deps{
+		Logger:            logger,
+		Sessions:          sessions,
+		OIDC:              prov,
+		Users:             st,
+		Audit:             st,
+		OIDCConfig:        cfg.OIDC,
+		AfterLoginPath:    cfg.AfterLoginPath,
+		IdentityStore:     st,
+		Identity:          ak,
+		ProviderName:      cfg.OIDC.Issuer,
+		DomainStore:       st,
+		DNSProvider:       dnsProvider,
+		TXTLookup:         txtLookup(cfg),
+		MailStore:         st,
+		Recon:             st,
+		Chasquid:          chasquidCtrl,
+		MailProvision:     chasquidCtrl,
+		Apps:              st,
+		Setup:             st,
+		AccessProvider:    accessProvider,
+		LocalDomain:       cfg.LocalDomain,
+		PublicIP:          cfg.PublicIP,
+		BootstrapEmail:    cfg.BootstrapEmail,
+		BootstrapPassword: cfg.BootstrapPassword,
+		EncryptionKey:     cfg.SessionSecret,
+	})
+
+	// Background auto-verify loop: completes onboarding once the primary
+	// domain's TXT record propagates, even with no browser open.
+	pollInterval := 15 * time.Second
+	if v := os.Getenv("SELFU_VERIFY_POLL_INTERVAL"); v != "" {
+		if secs, perr := strconv.Atoi(v); perr == nil && secs > 0 {
+			pollInterval = time.Duration(secs) * time.Second
+		}
+	}
+	apiHandler.StartVerificationPoller(ctx, pollInterval)
+
 	srv := &http.Server{
-		Addr: cfg.HTTPAddr,
-		Handler: httpapi.New(httpapi.Deps{
-			Logger:            logger,
-			Sessions:          sessions,
-			OIDC:              prov,
-			Users:             st,
-			Audit:             st,
-			OIDCConfig:        cfg.OIDC,
-			AfterLoginPath:    cfg.AfterLoginPath,
-			IdentityStore:     st,
-			Identity:          ak,
-			ProviderName:      cfg.OIDC.Issuer,
-			DomainStore:       st,
-			DNSProvider:       dnsProvider,
-			TXTLookup:         txtLookup(cfg),
-			MailStore:         st,
-			Recon:             st,
-			Chasquid:          chasquidCtrl,
-			MailProvision:     chasquidCtrl,
-			Apps:              st,
-			Setup:             st,
-			AccessProvider:    accessProvider,
-			LocalDomain:       cfg.LocalDomain,
-			PublicIP:          cfg.PublicIP,
-			BootstrapEmail:    cfg.BootstrapEmail,
-			BootstrapPassword: cfg.BootstrapPassword,
-			EncryptionKey:     cfg.SessionSecret,
-		}),
+		Addr:    cfg.HTTPAddr,
+		Handler: apiHandler.BuildRouter(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
