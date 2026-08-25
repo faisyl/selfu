@@ -2,50 +2,44 @@
 <html lang="en">
 <head>
 {{template "head" .}}
-<style>
-  .card { max-width: 680px; margin: 2rem auto; padding: 1.5rem; border: 1px solid #8884; border-radius: .6rem; }
-  .card h2 { margin-top: 0; }
-  .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
-  .hint { color: #888; font-size: .9rem; }
-</style>
 </head>
 <body>
 {{template "nav" .}}
 <main>
 <div class="card">
 
-{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
+{{if .Data.Err}}<p class="notice notice--error">{{.Data.Err}}</p>{{end}}
 
 {{if .Data.Onboarded}}
-  <h2>Setup complete</h2>
+  <h1>Setup complete</h1>
   <p>This installation is onboarded. Head to the <a href="/ui/orgs">console</a>.</p>
 
 {{else if not .Data.Authenticated}}
-  <h2>Welcome to selfu</h2>
+  <h1>Welcome to selfu</h1>
   <p>This installation is not set up yet. Sign in with the bootstrap administrator
      <strong>{{.Data.BootstrapEmail}}</strong> to onboard the primary domain.</p>
   <p class="hint">Password: the random admin password generated at install time
      (<code>AUTHENTIK_BOOTSTRAP_PASSWORD</code> in your <code>.env</code>, via <code>make gen-env</code>).
      This local login exists only until the installation is onboarded.</p>
-  <form class="inline" onsubmit="return bootstrapLogin(event)">
+  <form class="toolbar" onsubmit="return bootstrapLogin(event)">
     <input type="password" name="password" placeholder="bootstrap admin password" aria-label="Bootstrap admin password" required autofocus autocomplete="current-password">
-    <button type="submit">Sign in</button>
+    <button type="submit" class="btn btn--primary">Sign in</button>
   </form>
   <p id="login-msg" class="err"></p>
 
 {{else if not .Data.AdminExists}}
-  <h2>Setup pending</h2>
+  <h1>Setup pending</h1>
   <p>You are signed in, but no platform administrator exists yet. The first
      person to sign in through authentik becomes the administrator — use the
      bootstrap account ({{.Data.BootstrapEmail}}) to continue.</p>
 
 {{else}}
-  <h2>Welcome — let's set up your installation</h2>
+  <h1>Welcome — let's set up your installation</h1>
   <p class="hint">Associate the primary public domain with this installation.
      Subdomains (e.g. <code>app.yourdomain.com</code>) can be added later from the
      console once this domain is verified.</p>
 
-  <form id="onboard-form" class="inline" onsubmit="return onboard(event)">
+  <form id="onboard-form" class="toolbar" onsubmit="return onboard(event)">
     <input name="fqdn" placeholder="primary domain, e.g. example.com" aria-label="Primary domain" required>
     <select name="provider" onchange="showProvider(this.value)" aria-label="DNS provider">
       <option value="manual">Manual DNS (I add records myself)</option>
@@ -55,11 +49,11 @@
       <input name="api_token" placeholder="Cloudflare API token" type="password" aria-label="Cloudflare API token" required>
       <input name="zone_id" placeholder="Zone ID (optional — auto-detected)" aria-label="Cloudflare zone ID">
     </span>
-    <button type="submit">Create primary domain</button>
+    <button type="submit" class="btn btn--primary">Create primary domain</button>
   </form>
 
   <div id="auto-verify" hidden>
-    <p>DNS record created. Checking propagation & verifying automatically —
+    <p>DNS record created. Checking propagation &amp; verifying automatically —
        this usually takes under a minute. Keep this page open.</p>
     <p class="hint" id="auto-status">…</p>
   </div>
@@ -67,23 +61,20 @@
   <div id="verify-box" hidden>
     <p>Add this TXT record to your DNS, then verify:</p>
     <p><code id="rec-name"></code> → <code id="rec-value"></code></p>
-    <button onclick="verify()">I've added it — verify & finish</button>
+    <button class="btn btn--primary" onclick="verify()">I've added it — verify &amp; finish</button>
   </div>
-  <p id="msg" class="err"></p>
+  <p id="msg" class="notice"></p>
 {{end}}
 
 </div>
 
 <script>
-/* Shared JSON API helper: resolves with parsed body, rejects with a message. */
-async function api(url, opts={}){
-  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
-    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
-  const j = await r.json().catch(()=>({}));
-  if(!r.ok){ throw (j.error?.message || r.status); }
-  return j;
+/* api()/msgOf() are provided by the shared nav partial. */
+function setMsg(id, text, kind){    /* kind: 'success' | 'info' | 'error' */
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'notice notice--' + (kind || 'info');
 }
-function msgOf(e){ return typeof e === 'string' ? e : ((e && e.message) || String(e)); }
 
 async function bootstrapLogin(ev){
   ev.preventDefault();
@@ -101,7 +92,7 @@ async function onboard(ev){
   ev.preventDefault();
   const f = ev.target;
   if(f.provider.value === 'cloudflare' && !f.api_token.value.trim()){
-    document.getElementById('msg').textContent = 'Cloudflare requires an API token.';
+    setMsg('msg', 'Cloudflare requires an API token.', 'error');
     return;
   }
   const body = {fqdn: f.fqdn.value, provider: f.provider.value};
@@ -117,9 +108,9 @@ async function onboard(ev){
       document.getElementById('rec-name').textContent = j.verification.record_name;
       document.getElementById('rec-value').textContent = j.verification.record_value;
       document.getElementById('verify-box').hidden = false;
-      document.getElementById('msg').textContent = 'Add the TXT record above manually, then click Verify.';
+      setMsg('msg', 'Add the TXT record above manually, then click Verify.', 'info');
     }
-  } catch(e){ document.getElementById('msg').textContent = msgOf(e); }
+  } catch(e){ setMsg('msg', msgOf(e), 'error'); }
 }
 
 let autoTries = 0;
@@ -132,7 +123,6 @@ async function startAutoVerify(note){
 }
 
 async function autoVerifyOnce(){
-  let done = false;
   try {
     const j = await api('/api/v1/setup/verify', {method:'POST'});
     if (j.onboarded){ location.href = '/ui/orgs'; return; }
@@ -155,8 +145,8 @@ async function verify(){
   try {
     const j = await api('/api/v1/setup/verify', {method:'POST'});
     if(j.onboarded){ location.href = '/ui/orgs'; }
-    else { document.getElementById('msg').textContent = j.hint || 'Not propagated yet — try again in a minute.'; }
-  } catch(e){ document.getElementById('msg').textContent = msgOf(e); }
+    else { setMsg('msg', j.hint || 'Not propagated yet — try again in a minute.', 'info'); }
+  } catch(e){ setMsg('msg', msgOf(e), 'error'); }
 }
 
 // Resume an interrupted onboarding: if a primary domain is already pending

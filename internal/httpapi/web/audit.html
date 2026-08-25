@@ -7,15 +7,24 @@
 {{template "nav" .}}
 <main>
 
-<h2>Audit log</h2>
-{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
-<form class="inline" onsubmit="return false">
+<div class="page-header">
+  <div>
+    <h1>Audit log</h1>
+    <p class="desc">{{len .Data.Events}} events shown (newest first, max 200).</p>
+  </div>
+</div>
+{{if .Data.Err}}<p class="notice notice--error">{{.Data.Err}}</p>{{end}}
+
+<form class="toolbar" onsubmit="return false">
   <input name="action" id="action-filter" placeholder="filter by action, e.g. user." aria-label="Filter by action substring">
-  <button type="submit">Filter</button>
-  {{if .Data.ActionFilter}}<a href="/ui/audit">clear</a>{{end}}
-  <span class="hint">{{len .Data.Events}} events (newest first, max 200)</span>
+  <button type="submit" class="btn btn--primary">Filter</button>
+  {{if .Data.ActionFilter}}<a class="btn btn--ghost" href="/ui/audit">Clear</a>{{end}}
+</form>
+
+<div class="table-wrap">
 <table>
-<tr><th>When</th><th>Actor</th><th>Action</th><th>Resource</th><th>Details</th></tr>
+<thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Resource</th><th>Details</th></tr></thead>
+<tbody>
 {{range .Data.Events}}<tr>
   <td>{{.OccurredAt.Format "2006-01-02 15:04:05"}}</td>
   <td>{{if .ActorUserID}}{{.ActorUserID}}{{end}}</td>
@@ -23,13 +32,16 @@
   <td>{{if .ResourceType}}{{.ResourceType}}:{{.ResourceID}}{{end}}</td>
   <td><small>{{range $k, $v := .Details}}{{$k}}={{$v}} {{end}}</small></td>
 </tr>{{end}}
-{{if not .Data.Events}}<tr><td colspan="5"><em>No matching audit events.</em></td></tr>{{end}}
+{{if not .Data.Events}}<tr><td colspan="5" class="empty">No matching audit events.</td></tr>{{end}}
+</tbody>
 </table>
+</div>
+
 <script>
 /* The filter value is assigned via JS: html/template rejects dynamic
    values inside a form's URL-adjacent attributes. */
 document.getElementById('action-filter').value = {{.Data.ActionFilter}};
-document.querySelector('form.inline button[type=submit]').onclick = () => {
+document.querySelector('form.toolbar button[type=submit]').onclick = () => {
   const v = document.getElementById('action-filter').value.trim();
   location.href = v ? '/ui/audit?action=' + encodeURIComponent(v) : '/ui/audit';
 };

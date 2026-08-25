@@ -7,19 +7,32 @@
 {{template "nav" .}}
 <main>
 
-<h2>Organizations</h2>
-{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
-<form class="inline" onsubmit="apiReload('/api/v1/organizations',{method:'POST',body:{name:this.name.value}});return false">
+<div class="page-header">
+  <div>
+    <h1>Organizations</h1>
+    <p class="desc">Tenants on this installation. Deleting one cascades its domains, mail, apps and members.</p>
+  </div>
+</div>
+{{if .Data.Err}}<p class="notice notice--error">{{.Data.Err}}</p>{{end}}
+
+<form class="toolbar" onsubmit="apiReload('/api/v1/organizations',{method:'POST',body:{name:this.name.value}});return false">
   <input name="name" placeholder="Organization name" aria-label="Organization name" required>
-  <button type="submit">Create</button>
+  <button type="submit" class="btn btn--primary">Create</button>
 </form>
+
+<div class="table-wrap">
 <table>
-<tr><th>Name</th><th>Slug</th><th>Status</th><th></th></tr>
+<thead><tr><th>Name</th><th>Slug</th><th>Status</th><th></th></tr></thead>
+<tbody>
 {{range .Data.Orgs}}<tr>
-  <td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td>{{.Status}}</td>
-  <td><button class="del-org" data-id="{{.ID}}" data-name="{{.Name}}">Delete</button></td>
+  <td>{{.Name}}</td><td><code>{{.Slug}}</code></td>
+  <td><span class="badge" data-status="{{.Status}}">{{.Status}}</span></td>
+  <td><button class="btn btn--sm btn--danger del-org" data-id="{{.ID}}" data-name="{{.Name}}">Delete</button></td>
 </tr>{{end}}
+{{if not .Data.Orgs}}<tr><td colspan="4" class="empty">No organizations yet — create your first one above.</td></tr>{{end}}
+</tbody>
 </table>
+</div>
 
 <script>
 document.querySelectorAll('.del-org').forEach(b => b.onclick = () => {

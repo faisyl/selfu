@@ -7,49 +7,65 @@
 {{template "nav" .}}
 <main>
 
-<h2>Mail</h2>
-{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
-<form class="inline" action="/ui/mail" method="get">
+<div class="page-header">
+  <div>
+    <h1>Mail</h1>
+    <p class="desc">Manage mailboxes and aliases for a verified domain.</p>
+  </div>
+</div>
+{{if .Data.Err}}<p class="notice notice--error">{{.Data.Err}}</p>{{end}}
+
+<form class="toolbar" action="/ui/mail" method="get">
   <select name="org" onchange="this.form.submit()" aria-label="Organization">
     <option value="">— select organization —</option>
     {{range .Data.Orgs}}<option value="{{.ID}}" {{if eq .ID $.Data.OrgID}}selected{{end}}>{{.Name}}</option>{{end}}
   </select>
 </form>
 {{if .Data.DomainID}}
-  <h3>{{.Data.FQDN}}</h3>
+  <h2>{{.Data.FQDN}}</h2>
   {{if .Data.MailDomain}}
-    <p>Status: <code>{{.Data.MailDomain.Status}}</code> · DKIM <code>{{.Data.MailDomain.DKIM}}</code> · TLS <code>{{.Data.MailDomain.TLS}}</code></p>
-    {{if .Data.MailDomain.GroupID}}
-      <p class="hint">This domain's mail is <strong>group-managed</strong>: aliases are derived from group
-        membership (<code>{{.Data.MailDomain.GroupID}}</code>) and reconcile automatically. Individual
-        mailboxes and manual aliases are disabled for group-bound domains (spec §42).</p>
-    {{else}}
+    <p>
+      Status <span class="badge" data-status="{{.Data.MailDomain.Status}}">{{.Data.MailDomain.Status}}</span>
+      · DKIM <span class="badge" data-status="{{.Data.MailDomain.DKIM}}">{{.Data.MailDomain.DKIM}}</span>
+      · TLS <span class="badge" data-status="{{.Data.MailDomain.TLS}}">{{.Data.MailDomain.TLS}}</span>
+    </p>
+      <h3>Mailboxes</h3>
+      <div class="table-wrap">
       <table>
-        <tr><th>Address</th><th>Status</th></tr>
-        {{range .Data.Identities}}<tr><td>{{.Address}}</td><td>{{.Status}}</td></tr>{{end}}
+        <thead><tr><th>Address</th><th>Status</th></tr></thead>
+        <tbody>
+        {{range .Data.Identities}}<tr><td>{{.Address}}</td><td><span class="badge" data-status="{{.Status}}">{{.Status}}</span></td></tr>{{end}}
+        {{if not .Data.Identities}}<tr><td colspan="2" class="empty">No mailboxes yet — create one below.</td></tr>{{end}}
+        </tbody>
       </table>
-      <form class="inline" onsubmit="apiReload('/api/v1/domains/{{.Data.DomainID}}/mail-identities',{method:'POST',body:{local_part:this.local.value}});return false">
+      </div>
+      <form class="toolbar" onsubmit="apiReload('/api/v1/domains/{{.Data.DomainID}}/mail-identities',{method:'POST',body:{local_part:this.local.value}});return false">
         <input name="local" placeholder="alice" aria-label="Mailbox local part" required>
-        <button type="submit">Create mailbox</button>
+        <button type="submit" class="btn btn--primary">Create mailbox</button>
       </form>
-      <h4>Aliases</h4>
+      <h3>Aliases</h3>
+      <div class="table-wrap">
       <table>
-        <tr><th>Address</th><th>Destinations</th></tr>
+        <thead><tr><th>Address</th><th>Destinations</th></tr></thead>
+        <tbody>
         {{range .Data.Aliases}}<tr><td>{{.Address}}</td><td>{{range .Destinations}}{{.}} {{end}}</td></tr>{{end}}
+        {{if not .Data.Aliases}}<tr><td colspan="2" class="empty">No aliases yet — add one below.</td></tr>{{end}}
+        </tbody>
       </table>
-      <form class="inline" onsubmit="apiReload('/api/v1/domains/{{.Data.DomainID}}/mail/aliases',{method:'POST',body:{local_part:this.local.value,destinations:[this.dest.value]}});return false">
+      </div>
+      <form class="toolbar" onsubmit="apiReload('/api/v1/domains/{{.Data.DomainID}}/mail/aliases',{method:'POST',body:{local_part:this.local.value,destinations:[this.dest.value]}});return false">
         <input name="local" placeholder="support" aria-label="Alias local part" required>
         <input name="dest" placeholder="alice@domain" aria-label="Alias destination" required>
-        <button type="submit">Add alias</button>
+        <button type="submit" class="btn btn--primary">Add alias</button>
       </form>
-    {{end}}
   {{else}}
-    <form class="inline" onsubmit="apiReload('/api/v1/domains/{{.Data.DomainID}}/mail',{method:'POST'});return false">
-      <button type="submit">Enable mail</button>
+    <p class="hint">Mail is not enabled for this domain yet.</p>
+    <form class="toolbar" onsubmit="apiReload('/api/v1/domains/{{.Data.DomainID}}/mail',{method:'POST'});return false">
+      <button type="submit" class="btn btn--primary">Enable mail</button>
     </form>
   {{end}}
 {{else}}
-  <p class="hint">Select an organization, then a verified domain, to manage its mail.</p>
+  <p class="notice notice--info">Select an organization, then a verified domain, to manage its mail.</p>
 {{end}}
 
 </main>

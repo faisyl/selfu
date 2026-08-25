@@ -7,46 +7,72 @@
 {{template "nav" .}}
 <main>
 
-<h2>Domains</h2>
-{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
-<form class="inline" action="/ui/domains" method="get">
+<div class="page-header">
+  <div>
+    <h1>Domains</h1>
+    <p class="desc">Add and verify domains for an organization, then bind app hostnames.</p>
+  </div>
+</div>
+{{if .Data.Err}}<p class="notice notice--error">{{.Data.Err}}</p>{{end}}
+
+<form class="toolbar" action="/ui/domains" method="get">
   <select name="org" onchange="this.form.submit()" aria-label="Organization">
     <option value="">— select organization —</option>
     {{range .Data.Orgs}}<option value="{{.ID}}" {{if eq .ID $.Data.OrgID}}selected{{end}}>{{.Name}}</option>{{end}}
   </select>
   <input hidden name="domain" value="">
 </form>
-<form class="inline" onsubmit="return addDomain(event)">
+<form class="toolbar" onsubmit="return addDomain(event)">
   <input name="fqdn" placeholder="example.com" aria-label="Domain FQDN" required>
-  <button type="submit">Add domain</button>
+  <button type="submit" class="btn btn--primary">Add domain</button>
 </form>
+
+<div class="table-wrap">
 <table>
-<tr><th>FQDN</th><th>Status</th><th>Web</th><th>Mail</th><th></th></tr>
+<thead><tr><th>FQDN</th><th>Status</th><th>Web</th><th>Mail</th><th></th></tr></thead>
+<tbody>
 {{range .Data.Domains}}<tr>
-  <td>{{.FQDN}}</td><td>{{.Status}}</td><td>{{if .WebEnabled}}yes{{end}}</td><td>{{if .MailEnabled}}yes{{end}}</td>
+  <td>{{.FQDN}}</td>
+  <td><span class="badge" data-status="{{.Status}}">{{.Status}}</span></td>
+  <td><span class="badge" data-status="{{if .WebEnabled}}yes{{end}}">{{if .WebEnabled}}on{{end}}</span></td>
+  <td><span class="badge" data-status="{{if .MailEnabled}}yes{{end}}">{{if .MailEnabled}}on{{end}}</span></td>
   <td>
-    <a href="/ui/mail?org={{$.Data.OrgID}}&domain={{.ID}}">Mail</a>
-    <button class="verify-domain" data-id="{{.ID}}">Verify</button>
-    <button class="del-domain" data-id="{{.ID}}" data-fqdn="{{.FQDN}}">Delete</button>
+    <div class="row-actions">
+      <a class="btn btn--sm btn--ghost" href="/ui/mail?org={{$.Data.OrgID}}&domain={{.ID}}">Mail</a>
+      <button class="btn btn--sm verify-domain" data-id="{{.ID}}">Verify</button>
+      <button class="btn btn--sm btn--danger del-domain" data-id="{{.ID}}" data-fqdn="{{.FQDN}}">Delete</button>
+    </div>
   </td>
 </tr>{{end}}
+{{if not .Data.Domains}}<tr><td colspan="5" class="empty">{{if .Data.OrgID}}No domains for this organization yet — add one above.{{else}}Select an organization to see its domains.{{end}}</td></tr>{{end}}
+</tbody>
 </table>
-<p id="msg" class="err"></p>
-<form class="inline" onsubmit="return bindHostname(event)">
+</div>
+<p id="msg" class="notice"></p>
+
+<form class="toolbar" onsubmit="return bindHostname(event)">
   <select name="domid" aria-label="Domain for hostname">
     <option value="">— domain —</option>
     {{range .Data.Domains}}<option value="{{.ID}}">{{.FQDN}}</option>{{end}}
   </select>
   <input name="hostname" placeholder="git.example.com" aria-label="Hostname" required>
-  <button type="submit">Bind hostname</button>
+  <button type="submit" class="btn">Bind hostname</button>
 </form>
 {{if .Data.Hostnames}}
-<table><tr><th>Hostnames</th></tr>
-{{range .Data.Hostnames}}<tr><td>{{.Hostname}}</td></tr>{{end}}
+<div class="table-wrap">
+<table><thead><tr><th>Hostnames</th></tr></thead>
+<tbody>{{range .Data.Hostnames}}<tr><td>{{.Hostname}}</td></tr>{{end}}</tbody>
 </table>
+</div>
 {{end}}
 
 <script>
+function showMsg(text, kind){        /* kind: 'success' | 'info' | 'error' */
+  const m = document.getElementById('msg');
+  m.textContent = text;
+  m.className = 'notice notice--' + (kind || 'info');
+}
+
 async function addDomain(ev){
   ev.preventDefault();
   const org = document.querySelector('[name=org]').value;
@@ -70,12 +96,11 @@ async function bindHostname(ev){
 /* Verify surfaces the result inline (non-propagation is a retryable state,
    not an error). */
 document.querySelectorAll('.verify-domain').forEach(b => b.onclick = async () => {
-  const msg = document.getElementById('msg');
   try {
     const j = await api('/api/v1/domains/'+b.dataset.id+'/verify',{method:'POST'});
-    if(j.status === 'verified'){ msg.textContent = 'Domain verified.'; setTimeout(() => location.reload(), 600); }
-    else { msg.textContent = j.hint || 'Not verified yet — the TXT record may still be propagating.'; }
-  } catch(e){ msg.textContent = msgOf(e); }
+    if(j.status === 'verified'){ showMsg('Domain verified.', 'success'); setTimeout(() => location.reload(), 600); }
+    else { showMsg(j.hint || 'Not verified yet — the TXT record may still be propagating.', 'info'); }
+  } catch(e){ showMsg(msgOf(e), 'error'); }
 });
 
 document.querySelectorAll('.del-domain').forEach(b => b.onclick = () => {

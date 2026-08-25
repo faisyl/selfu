@@ -1,28 +1,286 @@
 {{define "head"}}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>selfu — admin console</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>selfu — {{if .Data.Title}}{{.Data.Title}}{{else}}admin console{{end}}</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; margin: 0; }
-  nav { display: flex; gap: 1rem; align-items: center; padding: .6rem 1rem; border-bottom: 1px solid #8884; background: #0000000a; }
-  nav a { text-decoration: none; color: inherit; padding: .25rem .5rem; border-radius: .3rem; }
-  nav a.active { background: #0af2; font-weight: 600; }
-  nav .spacer { flex: 1; }
-  main { padding: 1rem; max-width: 1100px; margin: 0 auto; }
-  table { border-collapse: collapse; width: 100%; margin-block: 1rem; }
-  th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid #8884; font-size: .95rem; }
-  th { border-bottom-width: 2px; }
-  input, select, button { padding: .3rem .5rem; margin: .15rem; }
-  form.inline { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
-  .err { color: #c33; }
-  code { background: #00000014; padding: .1rem .3rem; border-radius: .25rem; }
-  .linklike { background: none; border: none; color: inherit; cursor: pointer; text-decoration: underline; }
+  /* ==========================================================================
+     selfu admin console — "Quiet Slate" design system.
+     Light + dark via prefers-color-scheme. No build step, no framework.
+     Accent = favicon blue #1a8cff. White on #1a8cff is only 3.37:1, so buttons
+     and links use --accent-ink (#0f6fd6, 4.93:1 on white); the pure brand blue
+     is reserved for focus rings + the active-nav tint.
+     ========================================================================== */
+
+  /* ---- Tokens: light (default) ---- */
+  :root {
+    color-scheme: light dark;
+
+    --bg:            #f5f7f9;
+    --surface:       #ffffff;
+    --surface-2:     #eef1f4;
+    --border:        #d9dee4;
+    --border-strong: #c4ccd4;
+    --text:          #1b2530;
+    --text-muted:    #566270;   /* AA on surface and surface-2 */
+
+    --accent:        #1a8cff;   /* brand hue: focus ring + active-nav tint only */
+    --accent-ink:    #0f6fd6;   /* accessible interactive fill/text */
+    --accent-ink-hover: #0c5cb8;
+    --accent-tint:   #e8f2ff;
+
+    --danger:        #c92a2a;
+    --danger-hover:  #a51f1f;
+    --danger-ink:    #b02020;
+    --danger-tint:   #fbe8e8;
+
+    --success-ink:   #1a7a3c;
+    --success-tint:  #e5f4ea;
+    --warning-ink:   #8a5a00;
+    --warning-tint:  #fbeecd;
+
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --fs-xs: .78rem; --fs-sm: .875rem; --fs-base: 1rem;
+    --fs-lg: 1.15rem; --fs-xl: 1.5rem; --lh: 1.5;
+
+    --sp-1: .25rem; --sp-2: .5rem; --sp-3: .75rem;
+    --sp-4: 1rem;   --sp-5: 1.5rem; --sp-6: 2rem;
+
+    --r-sm: .25rem; --r-md: .4rem; --r-lg: .6rem; --r-pill: 999px;
+
+    --shadow-sm: 0 1px 2px rgba(16,24,32,.06), 0 1px 1px rgba(16,24,32,.04);
+    --shadow-md: 0 4px 12px rgba(16,24,32,.10);
+  }
+
+  /* ---- Tokens: dark ---- */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:            #0f141a;
+      --surface:       #171e26;
+      --surface-2:     #202832;
+      --border:        #2b333d;
+      --border-strong: #3a434f;
+      --text:          #e4e8ec;
+      --text-muted:    #9aa6b2;
+
+      --accent:        #4aa3ff;
+      --accent-ink:    #4aa3ff;
+      --accent-ink-hover: #74b8ff;
+      --accent-tint:   #17324d;
+
+      --danger:        #e05555;
+      --danger-hover:  #f06a6a;
+      --danger-ink:    #ff8f8f;
+      --danger-tint:   #3a1f22;
+
+      --success-ink:   #6fd694;
+      --success-tint:  #16321f;
+      --warning-ink:   #f2c66b;
+      --warning-tint:  #362a12;
+
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+      --shadow-md: 0 6px 16px rgba(0,0,0,.5);
+    }
+    .btn--primary { background: #1a75d6; }        /* white 4.6:1 on dark */
+    .btn--primary:hover { background: #2f86e6; }
+  }
+
+  /* ---- Base ---- */
+  * { box-sizing: border-box; }
+  body {
+    font-family: var(--font); font-size: var(--fs-base); line-height: var(--lh);
+    color: var(--text); background: var(--bg); margin: 0;
+  }
+  main { padding: var(--sp-5) var(--sp-4); max-width: 1100px; margin: 0 auto; }
+  a { color: var(--accent-ink); }
+  a:hover { color: var(--accent-ink-hover); }
+  code {
+    font-family: var(--mono); font-size: .9em;
+    background: var(--surface-2); color: var(--text);
+    padding: .1rem .35rem; border-radius: var(--r-sm);
+  }
+  h1, h2, h3, h4 { line-height: 1.25; }
+  .hint, small { color: var(--text-muted); font-size: var(--fs-sm); }
+  .mono { font-family: var(--mono); }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+
+  /* ---- Top navigation ---- */
+  nav {
+    display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-4);
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+  }
+  nav .brand {
+    display: inline-flex; align-items: center; gap: var(--sp-2);
+    font-weight: 700; margin-right: var(--sp-2); color: var(--text); text-decoration: none;
+  }
+  nav .brand img { width: 22px; height: 22px; border-radius: var(--r-sm); }
+  nav a {
+    text-decoration: none; color: var(--text-muted);
+    padding: var(--sp-1) var(--sp-3); border-radius: var(--r-md);
+    font-size: var(--fs-sm); font-weight: 500; white-space: nowrap;
+  }
+  nav a:hover { color: var(--text); background: var(--surface-2); }
+  nav a.active { color: var(--accent-ink); background: var(--accent-tint); font-weight: 600; }
+  nav .spacer { flex: 1 1 auto; }
+  nav .user { color: var(--text-muted); font-size: var(--fs-sm); }
+  .linklike {
+    background: none; border: none; color: var(--accent-ink);
+    cursor: pointer; text-decoration: underline; font: inherit; padding: var(--sp-1);
+  }
+
+  /* ---- Page header ---- */
+  .page-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: var(--sp-4); flex-wrap: wrap; margin-block: 0 var(--sp-4);
+  }
+  .page-header h1 { font-size: var(--fs-xl); margin: 0; }
+  .page-header .desc { color: var(--text-muted); font-size: var(--fs-sm); margin: var(--sp-1) 0 0; }
+  .page-header .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+  /* ---- Panel / card ---- */
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-lg); padding: var(--sp-5); box-shadow: var(--shadow-sm);
+    margin-block: var(--sp-4);
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-lg); box-shadow: var(--shadow-md);
+    max-width: 560px; margin: var(--sp-6) auto; padding: var(--sp-6);
+  }
+  .card h2 { margin-top: 0; }
+
+  /* ---- Tables ---- */
+  .table-wrap {
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border); border-radius: var(--r-lg);
+    background: var(--surface); margin-block: var(--sp-4);
+  }
+  table { border-collapse: collapse; width: 100%; }
+  th, td {
+    text-align: left; padding: var(--sp-3) var(--sp-3);
+    border-bottom: 1px solid var(--border); font-size: var(--fs-sm);
+    vertical-align: middle; white-space: nowrap;
+  }
+  thead th {
+    background: var(--surface-2); color: var(--text-muted);
+    font-weight: 600; font-size: var(--fs-xs); text-transform: uppercase;
+    letter-spacing: .03em; position: sticky; top: 0;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface-2); }
+  td .row-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+  .empty {
+    text-align: center; color: var(--text-muted);
+    padding: var(--sp-6) var(--sp-4); font-size: var(--fs-sm);
+  }
+
+  /* ---- Buttons ---- */
+  .btn, button {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+    min-height: 38px; padding: var(--sp-2) var(--sp-4);
+    font: inherit; font-size: var(--fs-sm); font-weight: 600;
+    border: 1px solid var(--border-strong); border-radius: var(--r-md);
+    background: var(--surface); color: var(--text);
+    cursor: pointer; transition: background .12s ease, border-color .12s ease;
+  }
+  .btn:hover, button:hover { background: var(--surface-2); }
+  .btn:disabled, button:disabled { opacity: .55; cursor: not-allowed; }
+  .btn--primary { background: var(--accent-ink); border-color: var(--accent-ink); color: #fff; }
+  .btn--primary:hover { background: var(--accent-ink-hover); border-color: var(--accent-ink-hover); }
+  .btn--danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .btn--danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
+  .btn--ghost { background: transparent; border-color: transparent; color: var(--accent-ink); }
+  .btn--ghost:hover { background: var(--surface-2); }
+  .btn--sm { min-height: 30px; padding: var(--sp-1) var(--sp-3); font-size: var(--fs-xs); }
+
+  /* ---- Form controls ---- */
+  input, select {
+    font: inherit; font-size: var(--fs-sm); min-height: 38px;
+    padding: var(--sp-2) var(--sp-3);
+    color: var(--text); background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  }
+  input::placeholder { color: var(--text-muted); }
+  input:focus-visible, select:focus-visible { border-color: var(--accent); }
+  label { font-size: var(--fs-sm); font-weight: 500; color: var(--text); }
+  form.inline, .toolbar {
+    display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center;
+    margin-block: var(--sp-3);
+  }
+
+  /* ---- Status badges ----
+     Usage: span.badge with a data-status attribute set to the status string.
+     Known values are colored; anything else falls back to neutral. */
+  .badge {
+    display: inline-flex; align-items: center; gap: .3em;
+    padding: .12rem .55rem; border-radius: var(--r-pill);
+    font-size: var(--fs-xs); font-weight: 600; line-height: 1.4;
+    text-transform: capitalize; white-space: nowrap;
+    background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border);
+  }
+  .badge[data-status="active"], .badge[data-status="verified"],
+  .badge[data-status="enabled"], .badge[data-status="yes"],
+  .badge[data-status="ready"], .badge[data-status="ok"],
+  .badge[data-status="valid"] {
+    background: var(--success-tint); color: var(--success-ink); border-color: transparent;
+  }
+  .badge[data-status="pending"], .badge[data-status="provisioning"],
+  .badge[data-status="verifying"], .badge[data-status="unverified"],
+  .badge[data-status="propagating"] {
+    background: var(--warning-tint); color: var(--warning-ink); border-color: transparent;
+  }
+  .badge[data-status="disabled"], .badge[data-status="failed"],
+  .badge[data-status="error"], .badge[data-status="revoked"],
+  .badge[data-status="invalid"] {
+    background: var(--danger-tint); color: var(--danger-ink); border-color: transparent;
+  }
+  .badge:empty { display: none; }
+
+  /* ---- Notices (neutral/status messages, distinct from real errors) ---- */
+  .notice {
+    display: block; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md);
+    font-size: var(--fs-sm); margin-block: var(--sp-3);
+    background: var(--accent-tint); color: var(--text); border: 1px solid var(--border);
+  }
+  .notice:empty { display: none; }
+  .notice--error   { background: var(--danger-tint);  color: var(--danger-ink);  border-color: transparent; }
+  .notice--success { background: var(--success-tint); color: var(--success-ink); border-color: transparent; }
+  .notice--info    { background: var(--accent-tint);  color: var(--text);        border-color: transparent; }
+  .err { color: var(--danger-ink); }
+  .err:empty { display: none; }
+
+  /* One-time credentials callout (catalog install result) */
+  .credbox {
+    background: var(--surface-2); border: 1px dashed var(--border-strong);
+    border-radius: var(--r-md); padding: var(--sp-4); overflow: auto;
+    font-family: var(--mono); font-size: var(--fs-sm); white-space: pre-wrap;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  }
+
+  @media (max-width: 600px) {
+    main { padding: var(--sp-4) var(--sp-3); }
+    nav { padding: var(--sp-2) var(--sp-3); }
+    nav .user { display: none; }
+    .page-header { flex-direction: column; }
+    form.inline, .toolbar { flex-direction: column; align-items: stretch; }
+    form.inline > *, .toolbar > * { width: 100%; }
+    .btn, button { width: 100%; }
+    td .row-actions .btn, td .row-actions button { width: auto; }
+  }
 </style>
 {{end}}
 
 {{define "nav"}}
 <nav>
+  <a href="/ui/orgs" class="brand"><img src="/favicon.svg" alt="">selfu</a>
   <a href="/ui/orgs" class="{{if eq .Data.Active "orgs"}}active{{end}}" {{if eq .Data.Active "orgs"}}aria-current="page"{{end}}>Organizations</a>
   <a href="/ui/users" class="{{if eq .Data.Active "users"}}active{{end}}" {{if eq .Data.Active "users"}}aria-current="page"{{end}}>Users</a>
   <a href="/ui/domains" class="{{if eq .Data.Active "domains"}}active{{end}}" {{if eq .Data.Active "domains"}}aria-current="page"{{end}}>Domains</a>
@@ -30,7 +288,7 @@
   <a href="/ui/catalog" class="{{if eq .Data.Active "catalog"}}active{{end}}" {{if eq .Data.Active "catalog"}}aria-current="page"{{end}}>Catalog</a>
   <a href="/ui/audit" class="{{if eq .Data.Active "audit"}}active{{end}}" {{if eq .Data.Active "audit"}}aria-current="page"{{end}}>Audit</a>
   <span class="spacer"></span>
-  <span>{{.Data.User.Email}}</span>
+  <span class="user">{{.Data.User.Email}}</span>
   <button type="button" class="linklike" onclick="logout()">Logout</button>
 </nav>
 <script>
@@ -49,6 +307,10 @@ async function apiReload(url, opts={}){
   try { await api(url, opts); } catch(e){ alert(msgOf(e)); return; }
   location.reload();
 }
+/* logout: clear the session, then let the server bounce us to login. */
+async function logout(){
+  try { await api('/api/v1/auth/logout', {method:'POST'}); } catch(e){ /* clear anyway */ }
+  location.href = '/ui/orgs';
+}
 </script>
-</nav>
 {{end}}

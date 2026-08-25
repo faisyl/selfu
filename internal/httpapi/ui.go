@@ -25,10 +25,12 @@ func (h *Handler) favicon(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(faviconSVG)
 }
 
-// uiBase is the common template data.
+// uiBase is the common template data. Title backs the per-page <title>
+// ("selfu — <Title>"); when empty the layout falls back to "admin console".
 type uiBase struct {
 	User   domain.User
 	Active string
+	Title  string
 	Err    string
 }
 
@@ -110,10 +112,10 @@ func (h *Handler) uiOrgs(w http.ResponseWriter, r *http.Request) {
 	}
 	orgs, err := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
 	if err != nil {
-		h.uiRender(w, "orgs", uiOrgsData{uiBase: uiBase{User: u, Active: "orgs", Err: err.Error()}})
+		h.uiRender(w, "orgs", uiOrgsData{uiBase: uiBase{User: u, Active: "orgs", Title: "Organizations", Err: err.Error()}})
 		return
 	}
-	h.uiRender(w, "orgs", uiOrgsData{uiBase: uiBase{User: u, Active: "orgs"}, Orgs: orgs})
+	h.uiRender(w, "orgs", uiOrgsData{uiBase: uiBase{User: u, Active: "orgs", Title: "Organizations"}, Orgs: orgs})
 }
 
 func (h *Handler) uiUsers(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +125,7 @@ func (h *Handler) uiUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	users, _ := h.d.IdentityStore.ListUsers(r.Context(), 500)
 	orgs, _ := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
-	h.uiRender(w, "users", uiUsersData{uiBase: uiBase{User: u, Active: "users"}, Users: users, Orgs: orgs})
+	h.uiRender(w, "users", uiUsersData{uiBase: uiBase{User: u, Active: "users", Title: "Users"}, Users: users, Orgs: orgs})
 }
 
 func (h *Handler) uiDomains(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +133,7 @@ func (h *Handler) uiDomains(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := uiDomainsData{uiBase: uiBase{User: u, Active: "domains"}}
+	data := uiDomainsData{uiBase: uiBase{User: u, Active: "domains", Title: "Domains"}}
 	orgs, err := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
 	if err != nil {
 		data.Err = err.Error()
@@ -164,7 +166,7 @@ func (h *Handler) uiMail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := uiMailData{uiBase: uiBase{User: u, Active: "mail"}}
+	data := uiMailData{uiBase: uiBase{User: u, Active: "mail", Title: "Mail"}}
 	orgs, err := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
 	if err != nil {
 		data.Err = err.Error()
@@ -200,7 +202,7 @@ func (h *Handler) uiCatalog(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := uiCatalogData{uiBase: uiBase{User: u, Active: "catalog"}}
+	data := uiCatalogData{uiBase: uiBase{User: u, Active: "catalog", Title: "Catalog"}}
 	orgs, err := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
 	if err != nil {
 		data.Err = err.Error()
@@ -220,7 +222,7 @@ func (h *Handler) uiAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := r.URL.Query().Get("action")
-	data := uiAuditData{uiBase: uiBase{User: u, Active: "audit"}, ActionFilter: action}
+	data := uiAuditData{uiBase: uiBase{User: u, Active: "audit", Title: "Audit log"}, ActionFilter: action}
 	events, err := h.d.Audit.ListAuditEvents(r.Context(), 200, action)
 	if err != nil {
 		data.Err = err.Error()
@@ -235,10 +237,11 @@ func (h *Handler) uiAudit(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) uiSetup(w http.ResponseWriter, r *http.Request) {
 	inst, err := h.d.Setup.GetInstallation(r.Context())
 	if err != nil {
-		h.uiRender(w, "setup", uiSetupData{uiBase: uiBase{Err: err.Error()}})
+		h.uiRender(w, "setup", uiSetupData{uiBase: uiBase{Title: "Setup", Err: err.Error()}})
 		return
 	}
 	data := uiSetupData{
+		uiBase:         uiBase{Title: "Setup"},
 		Onboarded:      inst.Onboarded(),
 		LocalDomain:    inst.LocalDomain,
 		BootstrapEmail: h.d.BootstrapEmail,

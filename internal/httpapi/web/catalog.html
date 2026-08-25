@@ -7,13 +7,25 @@
 {{template "nav" .}}
 <main>
 
-<h2>Catalog & installation</h2>
-{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
+<div class="page-header">
+  <div>
+    <h1>Catalog &amp; installation</h1>
+    <p class="desc">Install a catalog application into an organization on a chosen hostname.</p>
+  </div>
+</div>
+{{if .Data.Err}}<p class="notice notice--error">{{.Data.Err}}</p>{{end}}
+
+<div class="table-wrap">
 <table>
-<tr><th>Name</th><th>Slug</th><th>Version</th><th>Category</th></tr>
-{{range .Data.Apps}}<tr><td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td>{{.Version}}</td><td>{{.Category}}</td></tr>{{end}}
+<thead><tr><th>Name</th><th>Slug</th><th>Version</th><th>Category</th></tr></thead>
+<tbody>
+{{range .Data.Apps}}<tr><td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td>{{.Version}}</td><td><span class="badge">{{.Category}}</span></td></tr>{{end}}
+{{if not .Data.Apps}}<tr><td colspan="4" class="empty">No catalog applications available.</td></tr>{{end}}
+</tbody>
 </table>
-<form id="install-form" class="inline" onsubmit="return install(event)">
+</div>
+
+<form id="install-form" class="toolbar" onsubmit="return install(event)">
   <select name="org" required aria-label="Organization">
     <option value="">— organization —</option>
     {{range .Data.Orgs}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
@@ -23,11 +35,11 @@
     {{range .Data.Apps}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
   </select>
   <input name="hostname" placeholder="git.example.com" aria-label="App hostname" required>
-  <button type="submit">Install</button>
+  <button type="submit" class="btn btn--primary">Install</button>
 </form>
 <p class="hint">Install credentials (OIDC client, app SMTP identity) are shown
    <strong>once</strong> after install — copy them somewhere safe.</p>
-<pre id="install-result" hidden style="background:#00000010;padding:.8rem;border-radius:.4rem;overflow:auto"></pre>
+<pre id="install-result" class="credbox" hidden></pre>
 
 <script>
 async function install(ev){
