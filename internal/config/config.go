@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
+
+	"selfu/internal/domain"
 )
 
 // Environment variable names. Single source of truth shared by compose,
@@ -35,6 +38,26 @@ const (
 	// DNS provisioning via Cloudflare (G3); absent → Manual provider.
 	EnvCloudflareToken = "SELFU_CLOUDFLARE_API_TOKEN"
 	EnvCloudflareZone  = "SELFU_CLOUDFLARE_ZONE_ID"
+	// EnvAccessProvider selects the external-access provider for onboarding
+	// (manual|cloudflare); provider credentials are stored in the
+	// installation row once the wizard runs (G8/G9).
+	EnvAccessProvider = "SELFU_ACCESS_PROVIDER"
+	// EnvLocalDomain is the local domain served before onboarding; the
+	// bootstrap admin email lives under it (admin@selfu.local).
+	EnvLocalDomain = "SELFU_LOCAL_DOMAIN"
+	// EnvBootstrapEmail is the authentik bootstrap admin email shown by
+	// the onboarding wizard.
+	EnvBootstrapEmail = "AUTHENTIK_BOOTSTRAP_EMAIL"
+	// EnvBootstrapPassword is the random admin password used by the
+	// pre-onboarding local login (mirrors authentik's bootstrap password).
+	EnvBootstrapPassword = "SELFU_BOOTSTRAP_PASSWORD"
+	// EnvPublicIP is the origin address published by DNS providers for
+	// platform hostnames (PLATFORM_HOST/AUTH_HOST/MAIL_HOST).
+	EnvPublicIP = "SELFU_PUBLIC_IP"
+	// EnvDNSResolvers is the comma-separated resolver list (host:port) used
+	// for domain-verification TXT lookups. Defaults to public resolvers;
+	// the host stub resolver may cache negative answers.
+	EnvDNSResolvers = "SELFU_DNS_RESOLVERS"
 	// EnvChasquidAgentURL and EnvChasquidAgentToken configure the
 	// chasquid-agent sidecar (G4); absent → mail provisioning unavailable.
 	EnvChasquidAgentURL   = "SELFU_CHASQUID_AGENT_URL"
@@ -67,6 +90,22 @@ type Config struct {
 
 	// Cloudflare optionally enables automatic DNS provisioning (G3).
 	Cloudflare CloudflareConfig
+
+	// AccessProvider is the external-access provider identifier selected at
+	// startup (defaults to manual until the wizard stores one).
+	AccessProvider string
+	// LocalDomain is the pre-onboarding local domain.
+	LocalDomain string
+	// PublicIP is the origin A record target published for platform hosts.
+	PublicIP string
+	// DNSResolvers are the resolvers used for domain-verification TXT
+	// lookups (host:port; public resolvers by default).
+	DNSResolvers []string
+	// BootstrapEmail is the authentik bootstrap admin email (wizard hint).
+	BootstrapEmail string
+	// BootstrapPassword is the random admin password for the pre-onboarding
+	// local login (AUTHENTIK_BOOTSTRAP_PASSWORD).
+	BootstrapPassword string
 
 	// Mail configures the chasquid controller (G4).
 	Mail MailConfig
@@ -158,6 +197,17 @@ func Load() (*Config, error) {
 
 	cfg.Cloudflare.APIToken = os.Getenv(EnvCloudflareToken)
 	cfg.Cloudflare.ZoneID = os.Getenv(EnvCloudflareZone)
+
+	cfg.AccessProvider = getenv(EnvAccessProvider, "manual")
+	cfg.LocalDomain = domain.ValidateLocalDomain(os.Getenv(EnvLocalDomain))
+	cfg.PublicIP = os.Getenv(EnvPublicIP)
+	for _, s := range strings.Split(getenv(EnvDNSResolvers, "1.1.1.1:53,8.8.8.8:53"), ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			cfg.DNSResolvers = append(cfg.DNSResolvers, s)
+		}
+	}
+	cfg.BootstrapEmail = os.Getenv(EnvBootstrapEmail)
+	cfg.BootstrapPassword = os.Getenv(EnvBootstrapPassword)
 
 	cfg.Mail.AgentURL = os.Getenv(EnvChasquidAgentURL)
 	cfg.Mail.AgentToken = os.Getenv(EnvChasquidAgentToken)

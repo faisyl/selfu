@@ -8,15 +8,16 @@
 <main>
 
 <h2>Domains</h2>
+{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
 <form class="inline" action="/ui/domains" method="get">
-  <select name="org" onchange="this.form.submit()">
+  <select name="org" onchange="this.form.submit()" aria-label="Organization">
     <option value="">— select organization —</option>
     {{range .Data.Orgs}}<option value="{{.ID}}" {{if eq .ID $.Data.OrgID}}selected{{end}}>{{.Name}}</option>{{end}}
   </select>
   <input hidden name="domain" value="">
 </form>
-<form class="inline" onsubmit="api('/api/v1/organizations/'+document.querySelector('[name=org]').value+'/domains',{method:'POST',body:{fqdn:this.fqdn.value}});return false">
-  <input name="fqdn" placeholder="example.com" required>
+<form class="inline" onsubmit="return addDomain(event)">
+  <input name="fqdn" placeholder="example.com" aria-label="Domain FQDN" required>
   <button type="submit">Add domain</button>
 </form>
 <table>
@@ -25,17 +26,18 @@
   <td>{{.FQDN}}</td><td>{{.Status}}</td><td>{{if .WebEnabled}}yes{{end}}</td><td>{{if .MailEnabled}}yes{{end}}</td>
   <td>
     <a href="/ui/mail?org={{$.Data.OrgID}}&domain={{.ID}}">Mail</a>
-    <button onclick="api('/api/v1/domains/{{.ID}}/verify',{method:'POST'})">Verify</button>
-    <button onclick="api('/api/v1/domains/{{.ID}}',{method:'DELETE'})">Delete</button>
+    <button class="verify-domain" data-id="{{.ID}}">Verify</button>
+    <button class="del-domain" data-id="{{.ID}}" data-fqdn="{{.FQDN}}">Delete</button>
   </td>
 </tr>{{end}}
 </table>
-<form class="inline" onsubmit="const d=document.querySelector('[name=domid]');if(!d.value){alert('select a domain');return false;}api('/api/v1/domains/'+d.value+'/hostnames',{method:'POST',body:{hostname:this.hostname.value}});return false">
-  <select name="domid">
+<p id="msg" class="err"></p>
+<form class="inline" onsubmit="return bindHostname(event)">
+  <select name="domid" aria-label="Domain for hostname">
     <option value="">— domain —</option>
     {{range .Data.Domains}}<option value="{{.ID}}">{{.FQDN}}</option>{{end}}
   </select>
-  <input name="hostname" placeholder="git.example.com" required>
+  <input name="hostname" placeholder="git.example.com" aria-label="Hostname" required>
   <button type="submit">Bind hostname</button>
 </form>
 {{if .Data.Hostnames}}
@@ -43,13 +45,43 @@
 {{range .Data.Hostnames}}<tr><td>{{.Hostname}}</td></tr>{{end}}
 </table>
 {{end}}
+
 <script>
-async function api(url, opts={}){
-  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
-    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
-  if(!r.ok){ alert((await r.json().catch(()=> ({}))).error?.message || r.status); return; }
-  location.reload();
+async function addDomain(ev){
+  ev.preventDefault();
+  const org = document.querySelector('[name=org]').value;
+  if(!org){ alert('Select an organization first.'); return; }
+  try {
+    await api('/api/v1/organizations/'+org+'/domains',{method:'POST',body:{fqdn:ev.target.fqdn.value}});
+    location.reload();
+  } catch(e){ alert(msgOf(e)); }
 }
+
+async function bindHostname(ev){
+  ev.preventDefault();
+  const d = ev.target.domid.value;
+  if(!d){ alert('Select a domain.'); return; }
+  try {
+    await api('/api/v1/domains/'+d+'/hostnames',{method:'POST',body:{hostname:ev.target.hostname.value}});
+    location.reload();
+  } catch(e){ alert(msgOf(e)); }
+}
+
+/* Verify surfaces the result inline (non-propagation is a retryable state,
+   not an error). */
+document.querySelectorAll('.verify-domain').forEach(b => b.onclick = async () => {
+  const msg = document.getElementById('msg');
+  try {
+    const j = await api('/api/v1/domains/'+b.dataset.id+'/verify',{method:'POST'});
+    if(j.status === 'verified'){ msg.textContent = 'Domain verified.'; setTimeout(() => location.reload(), 600); }
+    else { msg.textContent = j.hint || 'Not verified yet — the TXT record may still be propagating.'; }
+  } catch(e){ msg.textContent = msgOf(e); }
+});
+
+document.querySelectorAll('.del-domain').forEach(b => b.onclick = () => {
+  if (confirm('Delete domain ' + b.dataset.fqdn + '? Hostnames must be removed first; mail data cascades.'))
+    apiReload('/api/v1/domains/' + b.dataset.id, {method:'DELETE'});
+});
 </script>
 
 </main>

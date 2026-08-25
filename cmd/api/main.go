@@ -3,7 +3,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"selfu/internal/access"
 	"selfu/internal/auth"
 	"selfu/internal/authentik"
 	"selfu/internal/chasquid"
@@ -68,14 +71,13 @@ func run(logger *slog.Logger) error {
 	// Identity admin client for user/group provisioning (G2).
 	ak := authentik.New(cfg.Authentik.BaseURL, cfg.Authentik.Token, cfg.Authentik.TLSInsecure)
 
-	// DNS provider: Manual by default; Cloudflare when configured (G3).
-	var dnsProvider dns.Provider = dns.ManualProvider{}
-	if cfg.Cloudflare.APIToken != "" && cfg.Cloudflare.ZoneID != "" {
-		dnsProvider = dns.NewCloudflare(dns.CloudflareConfig{
-			APIToken: cfg.Cloudflare.APIToken,
-			ZoneID:   cfg.Cloudflare.ZoneID,
-		})
+	// External access provider: env-configured Cloudflare credentials win;
+	// otherwise fall back to the provider stored by the wizard (G8/G9).
+	accessProvider, err := loadAccessProvider(ctx, st, cfg)
+	if err != nil {
+		return err
 	}
+	dnsProvider := accessProvider.DNS()
 
 	// Chasquid controller (G4); nil when the agent is not configured.
 	var chasquidCtrl chasquid.ChasquidController
@@ -86,24 +88,31 @@ func run(logger *slog.Logger) error {
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.New(httpapi.Deps{
-			Logger:         logger,
-			Sessions:       sessions,
-			OIDC:           prov,
-			Users:          st,
-			Audit:          st,
-			OIDCConfig:     cfg.OIDC,
-			AfterLoginPath: cfg.AfterLoginPath,
-			IdentityStore:  st,
-			Identity:       ak,
-			ProviderName:   cfg.OIDC.Issuer,
-			DomainStore:    st,
-			DNSProvider:    dnsProvider,
-			TXTLookup:      dns.DefaultTXTLookup,
-			MailStore:      st,
-			Recon:          st,
-			Chasquid:       chasquidCtrl,
-			MailProvision:  chasquidCtrl,
-			Apps:           st,
+			Logger:            logger,
+			Sessions:          sessions,
+			OIDC:              prov,
+			Users:             st,
+			Audit:             st,
+			OIDCConfig:        cfg.OIDC,
+			AfterLoginPath:    cfg.AfterLoginPath,
+			IdentityStore:     st,
+			Identity:          ak,
+			ProviderName:      cfg.OIDC.Issuer,
+			DomainStore:       st,
+			DNSProvider:       dnsProvider,
+			TXTLookup:         txtLookup(cfg),
+			MailStore:         st,
+			Recon:             st,
+			Chasquid:          chasquidCtrl,
+			MailProvision:     chasquidCtrl,
+			Apps:              st,
+			Setup:             st,
+			AccessProvider:    accessProvider,
+			LocalDomain:       cfg.LocalDomain,
+			PublicIP:          cfg.PublicIP,
+			BootstrapEmail:    cfg.BootstrapEmail,
+			BootstrapPassword: cfg.BootstrapPassword,
+			EncryptionKey:     cfg.SessionSecret,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
@@ -133,4 +142,53 @@ func run(logger *slog.Logger) error {
 	}
 	logger.Info("api stopped")
 	return nil
+}
+
+// txtLookup builds the TXT lookup for domain verification: public
+// resolvers when configured, else the system resolver.
+func txtLookup(cfg *config.Config) dns.TXTLookup {
+	if len(cfg.DNSResolvers) > 0 {
+		return dns.NewTXTLookup(cfg.DNSResolvers)
+	}
+	return dns.DefaultTXTLookup
+}
+
+// loadAccessProvider builds the external-access provider for the API:
+// env-configured Cloudflare credentials take precedence; otherwise the
+// provider stored (encrypted) by the wizard is decrypted and rebuilt;
+// manual is the fallback for a never-onboarded installation.
+func loadAccessProvider(ctx context.Context, st *store.Store, cfg *config.Config) (access.Provider, error) {
+	if cfg.Cloudflare.APIToken != "" && cfg.Cloudflare.ZoneID != "" {
+		return access.New("cloudflare", access.Config{
+			APIToken: cfg.Cloudflare.APIToken,
+			ZoneID:   cfg.Cloudflare.ZoneID,
+		})
+	}
+	inst, err := st.GetInstallation(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load installation: %w", err)
+	}
+	name := inst.AccessProvider
+	if name == "" || name == "manual" {
+		return access.New("manual", access.Config{})
+	}
+	sealed, err := st.GetInstallationConfig(ctx)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("load provider config: %w", err)
+	}
+	cfgStr := ""
+	if len(sealed) > 0 {
+		plain, derr := httpapi.DecryptSecret(cfg.SessionSecret, sealed)
+		if derr != nil {
+			return nil, fmt.Errorf("decrypt provider config: %w", derr)
+		}
+		cfgStr = plain
+	}
+	var pcfg access.Config
+	if cfgStr != "" {
+		if jerr := json.Unmarshal([]byte(cfgStr), &pcfg); jerr != nil {
+			return nil, fmt.Errorf("parse provider config: %w", jerr)
+		}
+	}
+	return access.New(name, pcfg)
 }

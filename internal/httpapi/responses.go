@@ -61,3 +61,19 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
 }
+
+// secureHeaders sets baseline response security headers on every response.
+// Inline scripts/styles are part of the server-rendered templates, so the
+// CSP allows 'unsafe-inline' for them while locking down framing and
+// MIME sniffing.
+func secureHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'")
+		h.Set("Referrer-Policy", "same-origin")
+		next.ServeHTTP(w, r)
+	})
+}

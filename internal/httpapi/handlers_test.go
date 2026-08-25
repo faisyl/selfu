@@ -11,8 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"selfu/internal/access"
 	"selfu/internal/auth"
 	"selfu/internal/config"
+	"selfu/internal/dns"
 	"selfu/internal/domain"
 )
 
@@ -53,6 +55,80 @@ func (f *fakeUsers) GetByID(_ context.Context, id string) (domain.User, error) {
 	return domain.User{}, storeErrNotFound()
 }
 
+func (f *fakeUsers) AdminCount(_ context.Context) (int, error) {
+	n := 0
+	for _, u := range f.byID {
+		if u.IsAdmin && u.Status == domain.UserStatusActive {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// fakeAccess is the access.Provider fake used by handler tests: it records
+// DNS provisioning calls and validates a token.
+type fakeAccess struct {
+	validateErr  error
+	resolveZone  string
+	resolveError error
+	txtSet       []string
+}
+
+func (f *fakeAccess) Name() string { return "fake" }
+func (f *fakeAccess) DNS() dns.Provider {
+	return dns.ManualProvider{}
+}
+func (f *fakeAccess) ACME() string                     { return "" }
+func (f *fakeAccess) Validate(_ context.Context) error { return f.validateErr }
+func (f *fakeAccess) ResolveZone(_ context.Context, _ string) (string, error) {
+	return f.resolveZone, f.resolveError
+}
+
+var _ access.Provider = (*fakeAccess)(nil)
+
+// fakeSetup is the onboarding persistence surface used by handler tests.
+type fakeSetup struct {
+	inst        domain.Installation
+	config      []byte
+	primaryID   string
+	onboardedAt *time.Time
+}
+
+func (f *fakeSetup) GetInstallation(_ context.Context) (domain.Installation, error) {
+	inst := f.inst
+	if inst.LocalDomain == "" {
+		inst.LocalDomain = domain.DefaultLocalDomain
+	}
+	if inst.DNSProvider == "" {
+		inst.DNSProvider = "manual"
+	}
+	if inst.AccessProvider == "" {
+		inst.AccessProvider = "manual"
+	}
+	inst.PrimaryDomainID = f.primaryID
+	inst.OnboardedAt = f.onboardedAt
+	return inst, nil
+}
+
+func (f *fakeSetup) GetInstallationConfig(_ context.Context) ([]byte, error) {
+	return f.config, nil
+}
+
+func (f *fakeSetup) SetInstallationPrimaryDomain(_ context.Context, id string) error {
+	f.primaryID = id
+	return nil
+}
+
+func (f *fakeSetup) SetInstallationProvider(_ context.Context, _, _ string, cfg []byte) error {
+	f.config = cfg
+	return nil
+}
+
+func (f *fakeSetup) SetInstallationOnboarded(_ context.Context, at time.Time) error {
+	f.onboardedAt = &at
+	return nil
+}
+
 type fakeAudit struct{ events []domain.AuditEvent }
 
 func (f *fakeAudit) CreateAuditEvent(_ context.Context, e domain.AuditEvent) error {
@@ -60,7 +136,7 @@ func (f *fakeAudit) CreateAuditEvent(_ context.Context, e domain.AuditEvent) err
 	return nil
 }
 
-func (f *fakeAudit) ListAuditEvents(_ context.Context, _ int) ([]domain.AuditEvent, error) {
+func (f *fakeAudit) ListAuditEvents(_ context.Context, _ int, _ string) ([]domain.AuditEvent, error) {
 	return f.events, nil
 }
 
@@ -86,27 +162,17 @@ func newHandler(t *testing.T, users *fakeUsers) (*Handler, *fakeAudit, *auth.Ses
 			Issuer: "https://auth.example",
 		},
 		AfterLoginPath: "/",
+		Setup:          &fakeSetup{},
+		AccessProvider: &fakeAccess{},
+		EncryptionKey:  []byte(strings.Repeat("k", 32)),
+		LocalDomain:    domain.DefaultLocalDomain,
 	}}
 	return h, audit, sessions, oidc
 }
 
 func router(t *testing.T, h *Handler) http.Handler {
 	t.Helper()
-	return New(Deps{
-		Logger:         h.d.Logger,
-		Sessions:       h.d.Sessions,
-		OIDC:           h.d.OIDC,
-		Users:          h.d.Users,
-		Audit:          h.d.Audit,
-		OIDCConfig:     h.d.OIDCConfig,
-		AfterLoginPath: h.d.AfterLoginPath,
-		IdentityStore:  h.d.IdentityStore,
-		Identity:       h.d.Identity,
-		ProviderName:   h.d.ProviderName,
-		DomainStore:    h.d.DomainStore,
-		DNSProvider:    h.d.DNSProvider,
-		TXTLookup:      h.d.TXTLookup,
-	})
+	return New(h.d)
 }
 
 func TestHealth(t *testing.T) {

@@ -12,7 +12,18 @@ import (
 //go:embed web/*.html
 var uiFS embed.FS
 
+//go:embed web/favicon.svg
+var faviconSVG []byte
+
 var uiTemplates = template.Must(template.ParseFS(uiFS, "web/layout.html", "web/*.html"))
+
+// favicon serves the embedded icon; a dedicated route keeps the request
+// away from the "/" UI handler (which would redirect it to the IdP).
+func (h *Handler) favicon(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(faviconSVG)
+}
 
 // uiBase is the common template data.
 type uiBase struct {
@@ -21,7 +32,13 @@ type uiBase struct {
 	Err    string
 }
 
-// UI page data.
+// uiAuditData backs the audit page.
+type uiAuditData struct {
+	uiBase
+	ActionFilter string
+	Events       []domain.AuditEvent
+}
+
 type uiOrgsData struct {
 	uiBase
 	Orgs []domain.Organization
@@ -58,9 +75,14 @@ type uiCatalogData struct {
 	Apps []store.CatalogApp
 }
 
-type uiAuditData struct {
+// uiSetupData backs the onboarding wizard page.
+type uiSetupData struct {
 	uiBase
-	Events []domain.AuditEvent
+	Onboarded      bool
+	LocalDomain    string
+	BootstrapEmail string
+	AdminExists    bool
+	Authenticated  bool
 }
 
 // uiRender renders a page template (web/*.html) with a .Data payload so the
@@ -109,16 +131,28 @@ func (h *Handler) uiDomains(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	orgs, _ := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
-	data := uiDomainsData{uiBase: uiBase{User: u, Active: "domains"}, Orgs: orgs}
+	data := uiDomainsData{uiBase: uiBase{User: u, Active: "domains"}}
+	orgs, err := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
+	if err != nil {
+		data.Err = err.Error()
+	}
+	data.Orgs = orgs
 	orgID := r.URL.Query().Get("org")
 	if orgID != "" {
 		data.OrgID = orgID
-		data.Domains, _ = h.d.DomainStore.ListDomainsByOrg(r.Context(), orgID)
+		domains, derr := h.d.DomainStore.ListDomainsByOrg(r.Context(), orgID)
+		if derr != nil && data.Err == "" {
+			data.Err = derr.Error()
+		}
+		data.Domains = domains
 		if d := r.URL.Query().Get("domain"); d != "" {
 			dom, err := h.d.DomainStore.GetDomainByID(r.Context(), d)
 			if err == nil {
-				data.Hostnames, _ = h.d.DomainStore.ListHostnamesByDomain(r.Context(), dom.ID)
+				hostnames, herr := h.d.DomainStore.ListHostnamesByDomain(r.Context(), dom.ID)
+				if herr != nil && data.Err == "" {
+					data.Err = herr.Error()
+				}
+				data.Hostnames = hostnames
 			}
 		}
 	}
@@ -130,8 +164,12 @@ func (h *Handler) uiMail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	orgs, _ := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
-	data := uiMailData{uiBase: uiBase{User: u, Active: "mail"}, Orgs: orgs}
+	data := uiMailData{uiBase: uiBase{User: u, Active: "mail"}}
+	orgs, err := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
+	if err != nil {
+		data.Err = err.Error()
+	}
+	data.Orgs = orgs
 	if orgID := r.URL.Query().Get("org"); orgID != "" {
 		data.OrgID = orgID
 		if domID := r.URL.Query().Get("domain"); domID != "" {
@@ -142,8 +180,16 @@ func (h *Handler) uiMail(w http.ResponseWriter, r *http.Request) {
 			if md, err := h.d.MailStore.GetMailDomainByDomainID(r.Context(), domID); err == nil {
 				data.MailDomain = &md
 			}
-			data.Identities, _ = h.d.MailStore.ListMailIdentitiesByDomain(r.Context(), domID)
-			data.Aliases, _ = h.d.MailStore.ListMailAliasesByDomain(r.Context(), domID)
+			identities, ierr := h.d.MailStore.ListMailIdentitiesByDomain(r.Context(), domID)
+			if ierr != nil && data.Err == "" {
+				data.Err = ierr.Error()
+			}
+			data.Identities = identities
+			aliases, aerr := h.d.MailStore.ListMailAliasesByDomain(r.Context(), domID)
+			if aerr != nil && data.Err == "" {
+				data.Err = aerr.Error()
+			}
+			data.Aliases = aliases
 		}
 	}
 	h.uiRender(w, "mail", data)
@@ -154,9 +200,18 @@ func (h *Handler) uiCatalog(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	orgs, _ := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
-	apps, _ := h.d.Apps.ListCatalogApps(r.Context())
-	h.uiRender(w, "catalog", uiCatalogData{uiBase: uiBase{User: u, Active: "catalog"}, Orgs: orgs, Apps: apps})
+	data := uiCatalogData{uiBase: uiBase{User: u, Active: "catalog"}}
+	orgs, err := h.d.IdentityStore.ListOrganizations(r.Context(), 500)
+	if err != nil {
+		data.Err = err.Error()
+	}
+	data.Orgs = orgs
+	apps, aerr := h.d.Apps.ListCatalogApps(r.Context())
+	if aerr != nil && data.Err == "" {
+		data.Err = aerr.Error()
+	}
+	data.Apps = apps
+	h.uiRender(w, "catalog", data)
 }
 
 func (h *Handler) uiAudit(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +219,40 @@ func (h *Handler) uiAudit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	events, _ := h.d.Audit.ListAuditEvents(r.Context(), 200)
-	h.uiRender(w, "audit", uiAuditData{uiBase: uiBase{User: u, Active: "audit"}, Events: events})
+	action := r.URL.Query().Get("action")
+	data := uiAuditData{uiBase: uiBase{User: u, Active: "audit"}, ActionFilter: action}
+	events, err := h.d.Audit.ListAuditEvents(r.Context(), 200, action)
+	if err != nil {
+		data.Err = err.Error()
+	} else {
+		data.Events = events
+	}
+	h.uiRender(w, "audit", data)
+}
+
+// uiSetup serves the onboarding wizard. It is reachable before login and
+// before onboarding: the page adapts to the session/installation state.
+func (h *Handler) uiSetup(w http.ResponseWriter, r *http.Request) {
+	inst, err := h.d.Setup.GetInstallation(r.Context())
+	if err != nil {
+		h.uiRender(w, "setup", uiSetupData{uiBase: uiBase{Err: err.Error()}})
+		return
+	}
+	data := uiSetupData{
+		Onboarded:      inst.Onboarded(),
+		LocalDomain:    inst.LocalDomain,
+		BootstrapEmail: h.d.BootstrapEmail,
+	}
+	if data.Onboarded {
+		http.Redirect(w, r, "/ui/orgs", http.StatusFound)
+		return
+	}
+	u, authed := h.authenticate(r)
+	data.Authenticated = authed
+	if authed {
+		data.User = u
+		n, _ := h.d.Users.AdminCount(r.Context())
+		data.AdminExists = n > 0
+	}
+	h.uiRender(w, "setup", data)
 }

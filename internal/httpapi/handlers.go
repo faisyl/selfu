@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"selfu/internal/access"
 	"selfu/internal/auth"
 	"selfu/internal/chasquid"
 	"selfu/internal/config"
@@ -60,6 +61,30 @@ type Deps struct {
 
 	// Apps is the application catalog/instance persistence surface (G5).
 	Apps store.AppStore
+
+	// Setup is the onboarding persistence surface (G8/G9).
+	Setup store.SetupStore
+	// AccessProvider provisions external access (DNS + ACME) for platform
+	// hostnames (spec §59, §88).
+	AccessProvider access.Provider
+	// ZoneResolver derives a provider zone id from a domain + API token.
+	// Nil → the request provider's own resolution (Cloudflare API).
+	ZoneResolver func(ctx context.Context, domain, apiToken string) (string, error)
+	// ProviderProbe validates provider credentials before onboarding;
+	// nil → the request provider's Validate (real network).
+	ProviderProbe func(ctx context.Context, p access.Provider) error
+	// LocalDomain is the pre-onboarding local domain (selfu.local).
+	LocalDomain string
+	// PublicIP is the origin address published for platform hostnames.
+	PublicIP string
+	// BootstrapEmail is the authentik bootstrap admin email shown by the
+	// onboarding wizard.
+	BootstrapEmail string
+	// BootstrapPassword is the random admin password for the pre-onboarding
+	// local login (AUTHENTIK_BOOTSTRAP_PASSWORD).
+	BootstrapPassword string
+	// EncryptionKey seals stored provider credentials (AES-256-GCM).
+	EncryptionKey []byte
 }
 
 // Handler serves the REST API and the OIDC login flow.
@@ -75,6 +100,13 @@ func (h *Handler) audit(ctx context.Context, e domain.AuditEvent) {
 	if err := h.d.Audit.CreateAuditEvent(ctx, e); err != nil {
 		h.d.Logger.Error("audit write failed", "err", err, "action", e.Action)
 	}
+}
+
+// logout clears the platform session cookie. Sessions are stateless HMAC
+// tokens, so expiry is the only revocation mechanism (spec §15).
+func (h *Handler) logout(w http.ResponseWriter, _ *http.Request) {
+	h.d.Sessions.ClearCookie(w)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {

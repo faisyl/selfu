@@ -1,0 +1,190 @@
+{{define "setup"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+<style>
+  .card { max-width: 680px; margin: 2rem auto; padding: 1.5rem; border: 1px solid #8884; border-radius: .6rem; }
+  .card h2 { margin-top: 0; }
+  .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+  .hint { color: #888; font-size: .9rem; }
+</style>
+</head>
+<body>
+{{template "nav" .}}
+<main>
+<div class="card">
+
+{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
+
+{{if .Data.Onboarded}}
+  <h2>Setup complete</h2>
+  <p>This installation is onboarded. Head to the <a href="/ui/orgs">console</a>.</p>
+
+{{else if not .Data.Authenticated}}
+  <h2>Welcome to selfu</h2>
+  <p>This installation is not set up yet. Sign in with the bootstrap administrator
+     <strong>{{.Data.BootstrapEmail}}</strong> to onboard the primary domain.</p>
+  <p class="hint">Password: the random admin password generated at install time
+     (<code>AUTHENTIK_BOOTSTRAP_PASSWORD</code> in your <code>.env</code>, via <code>make gen-env</code>).
+     This local login exists only until the installation is onboarded.</p>
+  <form class="inline" onsubmit="return bootstrapLogin(event)">
+    <input type="password" name="password" placeholder="bootstrap admin password" aria-label="Bootstrap admin password" required autofocus autocomplete="current-password">
+    <button type="submit">Sign in</button>
+  </form>
+  <p id="login-msg" class="err"></p>
+
+{{else if not .Data.AdminExists}}
+  <h2>Setup pending</h2>
+  <p>You are signed in, but no platform administrator exists yet. The first
+     person to sign in through authentik becomes the administrator — use the
+     bootstrap account ({{.Data.BootstrapEmail}}) to continue.</p>
+
+{{else}}
+  <h2>Welcome — let's set up your installation</h2>
+  <p class="hint">Associate the primary public domain with this installation.
+     Subdomains (e.g. <code>app.yourdomain.com</code>) can be added later from the
+     console once this domain is verified.</p>
+
+  <form id="onboard-form" class="inline" onsubmit="return onboard(event)">
+    <input name="fqdn" placeholder="primary domain, e.g. example.com" aria-label="Primary domain" required>
+    <select name="provider" onchange="showProvider(this.value)" aria-label="DNS provider">
+      <option value="manual">Manual DNS (I add records myself)</option>
+      <option value="cloudflare">Cloudflare (automatic DNS + TLS)</option>
+    </select>
+    <span id="cf-fields" hidden>
+      <input name="api_token" placeholder="Cloudflare API token" type="password" aria-label="Cloudflare API token" required>
+      <input name="zone_id" placeholder="Zone ID (optional — auto-detected)" aria-label="Cloudflare zone ID">
+    </span>
+    <button type="submit">Create primary domain</button>
+  </form>
+
+  <div id="auto-verify" hidden>
+    <p>DNS record created. Checking propagation & verifying automatically —
+       this usually takes under a minute. Keep this page open.</p>
+    <p class="hint" id="auto-status">…</p>
+  </div>
+
+  <div id="verify-box" hidden>
+    <p>Add this TXT record to your DNS, then verify:</p>
+    <p><code id="rec-name"></code> → <code id="rec-value"></code></p>
+    <button onclick="verify()">I've added it — verify & finish</button>
+  </div>
+  <p id="msg" class="err"></p>
+{{end}}
+
+</div>
+
+<script>
+/* Shared JSON API helper: resolves with parsed body, rejects with a message. */
+async function api(url, opts={}){
+  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
+    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok){ throw (j.error?.message || r.status); }
+  return j;
+}
+function msgOf(e){ return typeof e === 'string' ? e : ((e && e.message) || String(e)); }
+
+async function bootstrapLogin(ev){
+  ev.preventDefault();
+  const pw = ev.target.password.value;
+  try {
+    await api('/api/v1/setup/login', {method:'POST', body:{password:pw}});
+    location.reload();  // session cookie set → wizard shows onboarding form
+  } catch(e){ document.getElementById('login-msg').textContent = msgOf(e); }
+}
+function showProvider(provider){
+  document.getElementById('cf-fields').hidden = provider !== 'cloudflare';
+}
+
+async function onboard(ev){
+  ev.preventDefault();
+  const f = ev.target;
+  if(f.provider.value === 'cloudflare' && !f.api_token.value.trim()){
+    document.getElementById('msg').textContent = 'Cloudflare requires an API token.';
+    return;
+  }
+  const body = {fqdn: f.fqdn.value, provider: f.provider.value};
+  if(f.provider.value === 'cloudflare'){ body.api_token = f.api_token.value; }
+  try {
+    const j = await api('/api/v1/setup', {method:'POST', body});
+    if (j.verification.automated){
+      // Cloudflare provisioned the TXT: auto-verify once DNS propagates.
+      f.hidden = true;
+      document.getElementById('auto-verify').hidden = false;
+      startAutoVerify('Verification record created — checking DNS propagation…');
+    } else {
+      document.getElementById('rec-name').textContent = j.verification.record_name;
+      document.getElementById('rec-value').textContent = j.verification.record_value;
+      document.getElementById('verify-box').hidden = false;
+      document.getElementById('msg').textContent = 'Add the TXT record above manually, then click Verify.';
+    }
+  } catch(e){ document.getElementById('msg').textContent = msgOf(e); }
+}
+
+let autoTries = 0;
+const autoMaxTries = 72;           // 72 * 5s = 6 min max wait
+
+async function startAutoVerify(note){
+  autoTries = 0;
+  document.getElementById('auto-status').textContent = note || 'Waiting for DNS propagation…';
+  await autoVerifyOnce();
+}
+
+async function autoVerifyOnce(){
+  let done = false;
+  try {
+    const j = await api('/api/v1/setup/verify', {method:'POST'});
+    if (j.onboarded){ location.href = '/ui/orgs'; return; }
+    // verified:false — record not propagated yet
+    document.getElementById('auto-status').textContent = 'TXT record not visible in DNS yet — retrying…';
+  } catch(e){
+    // 422 lookup_failed / transient — treat as not-yet-propagated.
+    document.getElementById('auto-status').textContent = 'DNS lookup not ready — retrying…';
+  }
+  if (++autoTries >= autoMaxTries){
+    document.getElementById('auto-status').textContent =
+      'Verification is taking longer than expected. Check the TXT record is live, then click “Verify & finish”.';
+    document.getElementById('verify-box').hidden = false;
+    return;
+  }
+  setTimeout(autoVerifyOnce, 5000);
+}
+
+async function verify(){
+  try {
+    const j = await api('/api/v1/setup/verify', {method:'POST'});
+    if(j.onboarded){ location.href = '/ui/orgs'; }
+    else { document.getElementById('msg').textContent = j.hint || 'Not propagated yet — try again in a minute.'; }
+  } catch(e){ document.getElementById('msg').textContent = msgOf(e); }
+}
+
+// Resume an interrupted onboarding: if a primary domain is already pending
+// (e.g. the page was reloaded mid-auto-verify), continue verification
+// instead of offering to create a duplicate.
+(async function resumeOnboarding(){
+  const form = document.getElementById('onboard-form');
+  if (!form) return;                       // not in the create state
+  try {
+    const st = await api('/api/v1/setup');
+    if (st.onboarded) { location.href = '/ui/orgs'; return; }
+    const pd = st.primary_domain;
+    if (!pd) return;
+    if (pd.status !== 'verified'){
+      form.hidden = true;
+      document.getElementById('auto-verify').hidden = false;
+      startAutoVerify('Resuming verification of ' + pd.fqdn + '…');
+    } else {
+      form.hidden = true;
+      document.getElementById('auto-verify').hidden = false;
+      document.getElementById('auto-status').textContent = 'Domain verified — completing setup…';
+      const j = await api('/api/v1/setup/verify', {method:'POST'}).catch(()=>null);
+      if (j && j.onboarded) location.href = '/ui/orgs';
+    }
+  } catch(e){ /* status endpoint unavailable; leave the form as-is */ }
+})();
+</script>
+
+</main>
+</body>
+</html>{{end}}

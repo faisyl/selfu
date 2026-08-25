@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -27,6 +28,11 @@ type Provider interface {
 	SetTXT(ctx context.Context, fqdn, value string) error
 	// RemoveTXT deletes a TXT record with the given value.
 	RemoveTXT(ctx context.Context, fqdn, value string) error
+	// SetAddr ensures an A record points fqdn at ip. The external access
+	// surface uses this to publish platform hostnames (spec §59).
+	SetAddr(ctx context.Context, fqdn, ip string) error
+	// RemoveAddr removes the A record for fqdn.
+	RemoveAddr(ctx context.Context, fqdn, ip string) error
 }
 
 // ManualProvider emits instructions; it never auto-provisions records.
@@ -40,6 +46,12 @@ func (ManualProvider) SetTXT(context.Context, string, string) error { return Err
 
 // RemoveTXT reports that manual removal is required.
 func (ManualProvider) RemoveTXT(context.Context, string, string) error { return ErrManual }
+
+// SetAddr reports that manual provisioning is required.
+func (ManualProvider) SetAddr(context.Context, string, string) error { return ErrManual }
+
+// RemoveAddr reports that manual removal is required.
+func (ManualProvider) RemoveAddr(context.Context, string, string) error { return ErrManual }
 
 // TXTLookup returns the TXT records for a name.
 type TXTLookup func(ctx context.Context, fqdn string) ([]string, error)
@@ -85,6 +97,56 @@ func NewCloudflare(cfg CloudflareConfig) *CloudflareProvider {
 // Name matches the "cloudflare" provider identifier.
 func (c *CloudflareProvider) Name() string { return "cloudflare" }
 
+// ZoneExists verifies the configured zone is reachable with the given
+// credentials. Used to validate provider configuration before onboarding.
+func (c *CloudflareProvider) ZoneExists(ctx context.Context) error {
+	var resp struct {
+		Success bool                       `json:"success"`
+		Errors  []struct{ Message string } `json:"errors"`
+		Result  struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"result"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/zones/"+c.cfg.ZoneID, nil, &resp); err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("cloudflare zone check: %v", resp.Errors)
+	}
+	if resp.Result.ID == "" {
+		return fmt.Errorf("cloudflare zone %s not found", c.cfg.ZoneID)
+	}
+	return nil
+}
+
+// ZoneIDByDomain resolves the Cloudflare zone id for a domain (spec §88:
+// onboarding needs only a domain + API token). Returns a descriptive error
+// when the account does not host the domain.
+func (c *CloudflareProvider) ZoneIDByDomain(ctx context.Context, domain string) (string, error) {
+	q := "name=" + url.QueryEscape(strings.TrimSuffix(domain, "."))
+	var resp struct {
+		Success bool                       `json:"success"`
+		Errors  []struct{ Message string } `json:"errors"`
+		Result  []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"result"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/zones?"+q, nil, &resp); err != nil {
+		return "", err
+	}
+	if !resp.Success {
+		return "", fmt.Errorf("cloudflare zone lookup: %v", resp.Errors)
+	}
+	for _, z := range resp.Result {
+		if strings.EqualFold(z.Name, strings.TrimSuffix(domain, ".")) {
+			return z.ID, nil
+		}
+	}
+	return "", fmt.Errorf("no cloudflare zone found for %s (is the domain on this account?)", domain)
+}
+
 // SetTXT creates the TXT record (idempotent: records may carry multiple
 // strings, so an existing matching record is left alone).
 func (c *CloudflareProvider) SetTXT(ctx context.Context, fqdn, value string) error {
@@ -114,6 +176,60 @@ func (c *CloudflareProvider) RemoveTXT(ctx context.Context, fqdn, value string) 
 	}
 	for _, r := range resp.Result {
 		if r.Content == value {
+			return c.do(ctx, http.MethodDelete, "/zones/"+c.cfg.ZoneID+"/dns_records/"+r.ID, nil, nil)
+		}
+	}
+	return nil
+}
+
+// SetAddr ensures an A record points fqdn at ip (idempotent).
+func (c *CloudflareProvider) SetAddr(ctx context.Context, fqdn, ip string) error {
+	body := map[string]any{
+		"type":    "A",
+		"name":    fqdn,
+		"content": ip,
+		"ttl":     120,
+	}
+	var resp struct {
+		Success bool                       `json:"success"`
+		Errors  []struct{ Message string } `json:"errors"`
+		Result  []struct {
+			Content string `json:"content"`
+		} `json:"result"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/zones/"+c.cfg.ZoneID+"/dns_records?type=A&name="+fqdn, nil, &resp); err != nil {
+		return err
+	}
+	if resp.Success {
+		for _, r := range resp.Result {
+			if r.Content == ip {
+				return nil // already present
+			}
+		}
+	}
+	return c.do(ctx, http.MethodPost, "/zones/"+c.cfg.ZoneID+"/dns_records", body, nil)
+}
+
+// RemoveAddr removes the A record for fqdn.
+func (c *CloudflareProvider) RemoveAddr(ctx context.Context, fqdn, ip string) error {
+	type item struct {
+		ID      string `json:"id"`
+		Content string `json:"content"`
+	}
+	q := "type=A&name=" + fqdn
+	var resp struct {
+		Success bool                       `json:"success"`
+		Errors  []struct{ Message string } `json:"errors"`
+		Result  []item                     `json:"result"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/zones/"+c.cfg.ZoneID+"/dns_records?"+q, nil, &resp); err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("cloudflare list: %v", resp.Errors)
+	}
+	for _, r := range resp.Result {
+		if r.Content == ip {
 			return c.do(ctx, http.MethodDelete, "/zones/"+c.cfg.ZoneID+"/dns_records/"+r.ID, nil, nil)
 		}
 	}

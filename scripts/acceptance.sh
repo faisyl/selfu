@@ -41,6 +41,12 @@ say "1. health + auth gates"
 [ "$(code "$API/api/v1/health")" = "200" ] || die "health not 200"
 [ "$(curl -s $RES -o /dev/null -w '%{http_code}' "$API/api/v1/me")" = "401" ] || die "me should be 401 unauthenticated"
 
+say "1b. onboarding state (bootstrap wizard, G8/G9)"
+SETUP="$(curl -s $RES "$API/api/v1/setup")"
+echo "$SETUP" | grep -q '"onboarded":true' || die "installation not onboarded — run the setup wizard (GET /api/v1/setup) first"
+echo "$SETUP" | grep -q '"local_domain":"selfu.local"' || die "local domain missing from setup status"
+ok "installation onboarded"
+
 say "2. identity: org, user, group"
 ORG=$(api -H 'Content-Type: application/json' -d "{\"name\":\"Acceptance $SUFFIX\"}" "$API/api/v1/organizations" \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')

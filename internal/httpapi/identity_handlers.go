@@ -366,6 +366,113 @@ func (h *Handler) disableUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "disabled"})
 }
 
+// enableUser reactivates a disabled user (platform row + authentik
+// identity). Org memberships stripped at disable time are not restored.
+func (h *Handler) enableUser(w http.ResponseWriter, r *http.Request) {
+	if !rUser(r).IsAdmin {
+		writeError(w, http.StatusForbidden, "forbidden", "platform admin required")
+		return
+	}
+	id := r.PathValue("id")
+	if res, err := h.d.IdentityStore.GetExternalResource(r.Context(), domain.ResTypeAuthentikUser, id); err == nil {
+		if h.d.Identity != nil {
+			if aerr := h.d.Identity.SetUserActive(r.Context(), res.ExternalID, true); aerr != nil {
+				h.d.Logger.Warn("authentik enable failed", "err", aerr)
+			}
+		}
+	} else {
+		h.d.Logger.Warn("external mapping missing for user enable", "err", err, "user_id", id)
+	}
+	if err := h.d.IdentityStore.SetUserStatus(r.Context(), id, domain.UserStatusActive); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+		h.internalError(w, err)
+		return
+	}
+	h.audit(r.Context(), domain.AuditEvent{
+		ActorUserID:  new(rUser(r).ID),
+		Action:       "user.enabled",
+		ResourceType: "user",
+		ResourceID:   id,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "active"})
+}
+
+// setUserAdminReq is the admin-toggle payload.
+type setUserAdminReq struct {
+	Admin bool `json:"admin"`
+}
+
+// setUserAdmin grants or revokes platform-level admin. Guards: an admin
+// cannot demote themselves, and the last remaining admin cannot be demoted.
+func (h *Handler) setUserAdmin(w http.ResponseWriter, r *http.Request) {
+	admin := rUser(r)
+	if !admin.IsAdmin {
+		writeError(w, http.StatusForbidden, "forbidden", "platform admin required")
+		return
+	}
+	id := r.PathValue("id")
+	var req setUserAdminReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if !req.Admin {
+		if id == admin.ID {
+			writeError(w, http.StatusBadRequest, "invalid_request", "cannot demote yourself")
+			return
+		}
+		if n, _ := h.d.Users.AdminCount(r.Context()); n <= 1 {
+			writeError(w, http.StatusConflict, "last_admin", "cannot demote the last platform admin")
+			return
+		}
+	}
+	if err := h.d.IdentityStore.SetUserAdmin(r.Context(), id, req.Admin); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+		h.internalError(w, err)
+		return
+	}
+	h.audit(r.Context(), domain.AuditEvent{
+		ActorUserID:  &admin.ID,
+		Action:       "user.admin_updated",
+		ResourceType: "user",
+		ResourceID:   id,
+		Details:      map[string]any{"is_admin": req.Admin},
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"is_admin": req.Admin})
+}
+
+// deleteOrganization removes an organization; all owned resources cascade
+// (domains, hostnames, mail, application instances).
+func (h *Handler) deleteOrganization(w http.ResponseWriter, r *http.Request) {
+	if !rUser(r).IsAdmin {
+		writeError(w, http.StatusForbidden, "forbidden", "platform admin required")
+		return
+	}
+	id := r.PathValue("id")
+	requester := rUser(r)
+	if err := h.d.IdentityStore.DeleteOrganization(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "organization not found")
+			return
+		}
+		h.internalError(w, err)
+		return
+	}
+	h.audit(r.Context(), domain.AuditEvent{
+		ActorUserID:  &requester.ID,
+		Action:       "organization.deleted",
+		ResourceType: "organization",
+		ResourceID:   id,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
 func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 	if !rUser(r).IsAdmin {
 		writeError(w, http.StatusForbidden, "forbidden", "platform admin required")

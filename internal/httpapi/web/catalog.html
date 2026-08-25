@@ -8,30 +8,45 @@
 <main>
 
 <h2>Catalog & installation</h2>
+{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
 <table>
 <tr><th>Name</th><th>Slug</th><th>Version</th><th>Category</th></tr>
 {{range .Data.Apps}}<tr><td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td>{{.Version}}</td><td>{{.Category}}</td></tr>{{end}}
 </table>
-<form class="inline" onsubmit="api('/api/v1/organizations/'+this.org.value+'/applications',{method:'POST',body:{catalog_id:this.app.value,hostname:this.hostname.value}});return false">
-  <select name="org" required>
+<form id="install-form" class="inline" onsubmit="return install(event)">
+  <select name="org" required aria-label="Organization">
     <option value="">— organization —</option>
     {{range .Data.Orgs}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
   </select>
-  <select name="app" required>
+  <select name="app" required aria-label="Catalog app">
     <option value="">— catalog app —</option>
     {{range .Data.Apps}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
   </select>
-  <input name="hostname" placeholder="git.example.com" required>
+  <input name="hostname" placeholder="git.example.com" aria-label="App hostname" required>
   <button type="submit">Install</button>
 </form>
-<p class="err">{{.Data.Err}}</p>
+<p class="hint">Install credentials (OIDC client, app SMTP identity) are shown
+   <strong>once</strong> after install — copy them somewhere safe.</p>
+<pre id="install-result" hidden style="background:#00000010;padding:.8rem;border-radius:.4rem;overflow:auto"></pre>
+
 <script>
-async function api(url, opts={}){
-  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
-    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
-  if(!r.ok){ alert((await r.json().catch(()=> ({}))).error?.message || r.status); return; }
-  location.reload();
-  alert('installed — OIDC/SMTP credentials shown once in the API response');
+async function install(ev){
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    const j = await api('/api/v1/organizations/'+f.org.value+'/applications',{method:'POST',
+      body:{catalog_id:f.app.value, hostname:f.hostname.value}});
+    if(j.oidc || j.smtp){
+      // One-time credentials: render inline BEFORE anything reloads.
+      const pre = document.getElementById('install-result');
+      pre.hidden = false;
+      pre.textContent = 'SAVE THESE NOW — they are not shown again:\n\n'
+        + JSON.stringify({oidc: j.oidc || null, smtp: j.smtp || null, hostname: j.hostname || f.hostname.value}, null, 2);
+      f.reset();
+    } else {
+      location.reload();
+    }
+  } catch(e){ alert(msgOf(e)); }
 }
 </script>
 

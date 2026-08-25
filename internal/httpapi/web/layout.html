@@ -17,18 +17,38 @@
   form.inline { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
   .err { color: #c33; }
   code { background: #00000014; padding: .1rem .3rem; border-radius: .25rem; }
+  .linklike { background: none; border: none; color: inherit; cursor: pointer; text-decoration: underline; }
 </style>
 {{end}}
 
 {{define "nav"}}
 <nav>
-  <a href="/ui/orgs" class="{{if eq .Data.Active "orgs"}}active{{end}}">Organizations</a>
-  <a href="/ui/users" class="{{if eq .Data.Active "users"}}active{{end}}">Users</a>
-  <a href="/ui/domains" class="{{if eq .Data.Active "domains"}}active{{end}}">Domains</a>
-  <a href="/ui/mail" class="{{if eq .Data.Active "mail"}}active{{end}}">Mail</a>
-  <a href="/ui/catalog" class="{{if eq .Data.Active "catalog"}}active{{end}}">Catalog</a>
-  <a href="/ui/audit" class="{{if eq .Data.Active "audit"}}active{{end}}">Audit</a>
+  <a href="/ui/orgs" class="{{if eq .Data.Active "orgs"}}active{{end}}" {{if eq .Data.Active "orgs"}}aria-current="page"{{end}}>Organizations</a>
+  <a href="/ui/users" class="{{if eq .Data.Active "users"}}active{{end}}" {{if eq .Data.Active "users"}}aria-current="page"{{end}}>Users</a>
+  <a href="/ui/domains" class="{{if eq .Data.Active "domains"}}active{{end}}" {{if eq .Data.Active "domains"}}aria-current="page"{{end}}>Domains</a>
+  <a href="/ui/mail" class="{{if eq .Data.Active "mail"}}active{{end}}" {{if eq .Data.Active "mail"}}aria-current="page"{{end}}>Mail</a>
+  <a href="/ui/catalog" class="{{if eq .Data.Active "catalog"}}active{{end}}" {{if eq .Data.Active "catalog"}}aria-current="page"{{end}}>Catalog</a>
+  <a href="/ui/audit" class="{{if eq .Data.Active "audit"}}active{{end}}" {{if eq .Data.Active "audit"}}aria-current="page"{{end}}>Audit</a>
   <span class="spacer"></span>
   <span>{{.Data.User.Email}}</span>
+  <button type="button" class="linklike" onclick="logout()">Logout</button>
+</nav>
+<script>
+/* Shared JSON API helper for every console page: resolves with the parsed
+   body, rejects with a human-readable message on non-2xx. */
+async function api(url, opts={}){
+  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
+    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok){ throw (j.error?.message || r.status); }
+  return j;
+}
+function msgOf(e){ return typeof e === 'string' ? e : ((e && e.message) || String(e)); }
+/* apiReload: mutate, surface errors, refresh on success. */
+async function apiReload(url, opts={}){
+  try { await api(url, opts); } catch(e){ alert(msgOf(e)); return; }
+  location.reload();
+}
+</script>
 </nav>
 {{end}}

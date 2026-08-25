@@ -11,6 +11,13 @@ http:
       service: authentik
       tls:
         certResolver: le
+    # Bootstrap catch-all: serves the platform wizard for any host
+    # (raw IP / no DNS yet — first-run onboarding). Specific Host
+    # rules above take precedence over this rule.
+    bootstrap:
+      rule: "Host(`*`)"
+      service: platform
+      tls: {}
   services:
     platform:
       loadBalancer:

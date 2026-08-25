@@ -19,12 +19,15 @@ import (
 type UserStore interface {
 	UpsertFromOIDC(ctx context.Context, provider, subject, email, displayName string) (domain.User, bool, bool, error)
 	GetByID(ctx context.Context, id string) (domain.User, error)
+	// AdminCount returns the number of platform admins; used by the wizard
+	// to decide whether a bootstrap admin exists yet.
+	AdminCount(ctx context.Context) (int, error)
 }
 
 // AuditStore persists and lists audit events.
 type AuditStore interface {
 	CreateAuditEvent(ctx context.Context, e domain.AuditEvent) error
-	ListAuditEvents(ctx context.Context, limit int) ([]domain.AuditEvent, error)
+	ListAuditEvents(ctx context.Context, limit int, actionFilter string) ([]domain.AuditEvent, error)
 }
 
 // IdentityStore is the identity persistence surface (users, orgs, memberships,
@@ -53,6 +56,8 @@ type IdentityStore interface {
 	GetUserByEmail(ctx context.Context, email string) (domain.User, error)
 	CreateUser(ctx context.Context, email, displayName, authProvider, authIdentityID string) (domain.User, error)
 	SetUserStatus(ctx context.Context, id string, status domain.UserStatus) error
+	// SetUserAdmin grants or revokes platform-level admin.
+	SetUserAdmin(ctx context.Context, id string, admin bool) error
 	ListUsers(ctx context.Context, limit int) ([]domain.User, error)
 
 	UpsertExternalResource(ctx context.Context, res domain.ExternalResource) (domain.ExternalResource, error)
@@ -125,6 +130,18 @@ type GroupStore interface {
 	ListGroupMembers(ctx context.Context, groupID string) ([]GroupMember, error)
 }
 
+// SetupStore is the onboarding surface read by the wizard and the API
+// (G8/G9): installation singleton state and primary-domain association.
+type SetupStore interface {
+	GetInstallation(ctx context.Context) (domain.Installation, error)
+	// GetInstallationConfig returns the encrypted provider configuration
+	// blob; empty when none was stored.
+	GetInstallationConfig(ctx context.Context) ([]byte, error)
+	SetInstallationPrimaryDomain(ctx context.Context, domainID string) error
+	SetInstallationProvider(ctx context.Context, dnsProvider, accessProvider string, config []byte) error
+	SetInstallationOnboarded(ctx context.Context, at time.Time) error
+}
+
 // Recon is everything the reconciliation worker needs from the store.
 type Recon interface {
 	MailStore
@@ -144,5 +161,6 @@ var (
 	_ MailStore     = (*Store)(nil)
 	_ AppStore      = (*Store)(nil)
 	_ GroupStore    = (*Store)(nil)
+	_ SetupStore    = (*Store)(nil)
 	_ Recon         = (*Store)(nil)
 )

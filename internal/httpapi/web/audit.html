@@ -8,6 +8,12 @@
 <main>
 
 <h2>Audit log</h2>
+{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
+<form class="inline" onsubmit="return false">
+  <input name="action" id="action-filter" placeholder="filter by action, e.g. user." aria-label="Filter by action substring">
+  <button type="submit">Filter</button>
+  {{if .Data.ActionFilter}}<a href="/ui/audit">clear</a>{{end}}
+  <span class="hint">{{len .Data.Events}} events (newest first, max 200)</span>
 <table>
 <tr><th>When</th><th>Actor</th><th>Action</th><th>Resource</th><th>Details</th></tr>
 {{range .Data.Events}}<tr>
@@ -17,7 +23,17 @@
   <td>{{if .ResourceType}}{{.ResourceType}}:{{.ResourceID}}{{end}}</td>
   <td><small>{{range $k, $v := .Details}}{{$k}}={{$v}} {{end}}</small></td>
 </tr>{{end}}
+{{if not .Data.Events}}<tr><td colspan="5"><em>No matching audit events.</em></td></tr>{{end}}
 </table>
+<script>
+/* The filter value is assigned via JS: html/template rejects dynamic
+   values inside a form's URL-adjacent attributes. */
+document.getElementById('action-filter').value = {{.Data.ActionFilter}};
+document.querySelector('form.inline button[type=submit]').onclick = () => {
+  const v = document.getElementById('action-filter').value.trim();
+  location.href = v ? '/ui/audit?action=' + encodeURIComponent(v) : '/ui/audit';
+};
+</script>
 
 </main>
 </body>

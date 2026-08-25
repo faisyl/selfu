@@ -55,6 +55,17 @@ func (s *Store) GetByID(ctx context.Context, id string) (domain.User, error) {
 	return user, nil
 }
 
+const adminCountSQL = `SELECT count(*) FROM users WHERE is_admin AND status = 'active'`
+
+// AdminCount returns the number of active platform admins.
+func (s *Store) AdminCount(ctx context.Context) (int, error) {
+	var n int
+	if err := s.pool.QueryRow(ctx, adminCountSQL).Scan(&n); err != nil {
+		return 0, fmt.Errorf("admin count: %w", err)
+	}
+	return n, nil
+}
+
 const upsertUserSQL = `
 INSERT INTO users (id, email, display_name, status, auth_provider, auth_identity_id)
 VALUES ($1, $2, $3, 'active', $4, $5)

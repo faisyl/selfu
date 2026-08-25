@@ -7,6 +7,13 @@ import (
 	"selfu/internal/domain"
 )
 
+// CSRF posture: mutations are JSON-only fetches carrying the SameSite=Lax
+// session cookie. Cross-site forms cannot forge them (Lax cookies are not
+// attached to cross-site POSTs, and a form cannot send the required
+// application/json Content-Type without triggering CORS preflight, which
+// the API does not answer). No per-request tokens by design; revisit if a
+// non-Lax cookie mode or cross-site embedding is ever introduced.
+
 // The session-authentication module: one cookie → validate → fetch gateway
 // used by every protected surface. It never writes a response; each route
 // family (JSON 401, HTML 302) maps the outcome at its own seam.
@@ -61,14 +68,21 @@ func (h *Handler) authn(next func(http.ResponseWriter, *http.Request)) http.Hand
 }
 
 // uiAuth gates an HTML page: unauthenticated browsers are redirected to the
-// OIDC login (spec §15), never shown a 401 (HTML route family).
+// OIDC login (spec §15), never shown a 401 (HTML route family). While the
+// installation is not onboarded, even authenticated users are kept on the
+// wizard page (G8/G9).
 func (h *Handler) uiAuth(w http.ResponseWriter, r *http.Request) (domain.User, bool) {
 	u, ok := h.authenticate(r)
-	if ok {
-		return u, true
+	if !ok {
+		http.Redirect(w, r, "/api/v1/auth/login", http.StatusFound)
+		return domain.User{}, false
 	}
-	http.Redirect(w, r, "/api/v1/auth/login", http.StatusFound)
-	return domain.User{}, false
+	inst, err := h.d.Setup.GetInstallation(r.Context())
+	if err == nil && !inst.Onboarded() {
+		http.Redirect(w, r, "/ui/setup", http.StatusFound)
+		return domain.User{}, false
+	}
+	return u, true
 }
 
 type userCtxKey struct{}

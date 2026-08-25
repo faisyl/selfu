@@ -29,12 +29,14 @@ func (s *Store) CreateAuditEvent(ctx context.Context, e domain.AuditEvent) error
 	return nil
 }
 
-// ListAuditEvents returns the most recent audit events (UI, §68).
-func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]domain.AuditEvent, error) {
+// ListAuditEvents returns the most recent audit events (UI, §68). When
+// actionFilter is non-empty only events whose action contains it (case-
+// insensitive) are returned.
+func (s *Store) ListAuditEvents(ctx context.Context, limit int, actionFilter string) ([]domain.AuditEvent, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.pool.Query(ctx, listAuditEventsSQL, limit)
+	rows, err := s.pool.Query(ctx, listAuditEventsSQL, limit, actionFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +59,9 @@ func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]domain.AuditE
 
 const listAuditEventsSQL = `
 SELECT id, occurred_at, actor_user_id, action, resource_type, resource_id, details, request_id
-FROM audit_events ORDER BY occurred_at DESC LIMIT $1`
+FROM audit_events
+WHERE ($2 = '' OR action ILIKE '%' || $2 || '%')
+ORDER BY occurred_at DESC LIMIT $1`
 const insertAuditEventSQL = `
 INSERT INTO audit_events (id, actor_user_id, action, resource_type, resource_id, details, request_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)`

@@ -9,21 +9,23 @@
 
 <h2>Organizations</h2>
 {{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
-<form class="inline" onsubmit="api('/api/v1/organizations',{method:'POST',body:{name:this.name.value}});return false">
-  <input name="name" placeholder="Organization name" required>
+<form class="inline" onsubmit="apiReload('/api/v1/organizations',{method:'POST',body:{name:this.name.value}});return false">
+  <input name="name" placeholder="Organization name" aria-label="Organization name" required>
   <button type="submit">Create</button>
 </form>
 <table>
-<tr><th>Name</th><th>Slug</th><th>Status</th></tr>
-{{range .Data.Orgs}}<tr><td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td>{{.Status}}</td></tr>{{end}}
+<tr><th>Name</th><th>Slug</th><th>Status</th><th></th></tr>
+{{range .Data.Orgs}}<tr>
+  <td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td>{{.Status}}</td>
+  <td><button class="del-org" data-id="{{.ID}}" data-name="{{.Name}}">Delete</button></td>
+</tr>{{end}}
 </table>
+
 <script>
-async function api(url, opts={}){
-  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
-    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
-  if(!r.ok){ alert((await r.json().catch(()=> ({}))).error?.message || r.status); return; }
-  location.reload();
-}
+document.querySelectorAll('.del-org').forEach(b => b.onclick = () => {
+  if (confirm('Delete organization "' + b.dataset.name + '"? This cascades its domains, hostnames, mail, apps and members.'))
+    apiReload('/api/v1/organizations/' + b.dataset.id, {method:'DELETE'});
+});
 </script>
 
 </main>

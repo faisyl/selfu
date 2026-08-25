@@ -8,10 +8,11 @@
 <main>
 
 <h2>Users</h2>
-<form class="inline" onsubmit="api('/api/v1/users',{method:'POST',body:{email:this.email.value,display_name:this.display.value,organization_id:this.org.value}});return false">
-  <input name="email" placeholder="email" required>
-  <input name="display" placeholder="Display name">
-  <select name="org"><option value="">no org</option>
+{{if .Data.Err}}<p class="err">{{.Data.Err}}</p>{{end}}
+<form class="inline" onsubmit="apiReload('/api/v1/users',{method:'POST',body:{email:this.email.value,display_name:this.display.value,organization_id:this.org.value}});return false">
+  <input name="email" placeholder="email" aria-label="Email" required>
+  <input name="display" placeholder="Display name" aria-label="Display name">
+  <select name="org" aria-label="Organization"><option value="">no org</option>
     {{range .Data.Orgs}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
   </select>
   <button type="submit">Create user</button>
@@ -20,16 +21,38 @@
 <tr><th>Email</th><th>Name</th><th>Status</th><th>Admin</th><th></th></tr>
 {{range .Data.Users}}<tr>
   <td>{{.Email}}</td><td>{{.DisplayName}}</td><td>{{.Status}}</td><td>{{if .IsAdmin}}yes{{end}}</td>
-  <td><button onclick="api('/api/v1/users/{{.ID}}/disable',{method:'POST'})">Disable</button></td>
+  <td>
+    {{if eq (printf "%s" .Status) "disabled"}}
+      <button class="enable-user" data-id="{{.ID}}">Enable</button>
+    {{else}}
+      <button class="disable-user" data-id="{{.ID}}">Disable</button>
+    {{end}}
+    {{if .IsAdmin}}
+      <button class="demote-user" data-id="{{.ID}}">Demote</button>
+    {{else}}
+      <button class="promote-user" data-id="{{.ID}}">Promote</button>
+    {{end}}
+  </td>
 </tr>{{end}}
 </table>
+
 <script>
-async function api(url, opts={}){
-  const r = await fetch(url, {method:opts.method||'GET', headers:{'Content-Type':'application/json'},
-    body: opts.body?JSON.stringify(opts.body):undefined, credentials:'same-origin'});
-  if(!r.ok){ alert((await r.json().catch(()=> ({}))).error?.message || r.status); return; }
-  location.reload();
-}
+document.querySelectorAll('.enable-user').forEach(b => b.onclick = () => {
+  if (confirm('Re-enable this user? Org memberships must be re-granted.'))
+    apiReload('/api/v1/users/' + b.dataset.id + '/enable', {method:'POST'});
+});
+document.querySelectorAll('.disable-user').forEach(b => b.onclick = () => {
+  if (confirm('Disable this user? Their login is revoked and memberships removed.'))
+    apiReload('/api/v1/users/' + b.dataset.id + '/disable', {method:'POST'});
+});
+document.querySelectorAll('.promote-user').forEach(b => b.onclick = () => {
+  if (confirm('Grant platform admin to this user?'))
+    apiReload('/api/v1/users/' + b.dataset.id + '/admin', {method:'POST', body:{admin:true}});
+});
+document.querySelectorAll('.demote-user').forEach(b => b.onclick = () => {
+  if (confirm('Demote this platform admin?'))
+    apiReload('/api/v1/users/' + b.dataset.id + '/admin', {method:'POST', body:{admin:false}});
+});
 </script>
 
 </main>
