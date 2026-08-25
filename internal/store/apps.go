@@ -25,6 +25,22 @@ func (s *Store) CreateCatalogApp(ctx context.Context, m *catalog.Manifest) (stri
 	return id, nil
 }
 
+// UpsertCatalogApp registers or converges a catalog entry, keyed on
+// (slug, version). Used by the seed bootstrap step so re-running it keeps
+// built-in manifests in sync with the binary.
+func (s *Store) UpsertCatalogApp(ctx context.Context, m *catalog.Manifest) error {
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("marshal catalog manifest: %w", err)
+	}
+	_, err = s.pool.Exec(ctx, upsertCatalogAppSQL,
+		m.Metadata.Name, m.ID, m.Version, m.Metadata.Description, m.Metadata.Category, raw)
+	if err != nil {
+		return fmt.Errorf("upsert catalog app: %w", err)
+	}
+	return nil
+}
+
 // GetCatalogAppByID returns a catalog entry by id.
 func (s *Store) GetCatalogAppByID(ctx context.Context, id string) (CatalogApp, error) {
 	var a CatalogApp
@@ -156,6 +172,16 @@ type Instance struct {
 const insertCatalogAppSQL = `
 INSERT INTO catalog_applications (id, name, slug, version, description, category, manifest)
 VALUES ($1, $2, $3, $4, $5, $6, $7)`
+
+const upsertCatalogAppSQL = `
+INSERT INTO catalog_applications (id, name, slug, version, description, category, manifest)
+VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+ON CONFLICT (slug, version) DO UPDATE SET
+    name        = EXCLUDED.name,
+    description = EXCLUDED.description,
+    category    = EXCLUDED.category,
+    manifest    = EXCLUDED.manifest,
+    updated_at  = now()`
 
 const catalogAppByIDSQL = `
 SELECT id, name, slug, version, description, category, manifest

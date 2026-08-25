@@ -1,7 +1,7 @@
 # selfu — Phase 1 development targets.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: build test vet fmt up down psql gen-env migrate-up migrate-status clean
+.PHONY: build test vet fmt up down psql gen-env migrate-up migrate-status doctor bootstrap clean
 
 build:
 	go build -ldflags "-X selfu/internal/version.Version=$(VERSION)" ./...
@@ -45,6 +45,15 @@ migrate-up:
 
 migrate-status:
 	go run ./cmd/migrate status
+
+# Preflight checks for a selfu host (docker, ports, .env, DNS, Cloudflare).
+doctor:
+	go run ./cmd/doctor
+
+# One-command first-run setup: doctor -> env -> stack -> migrations ->
+# OIDC bootstrap -> catalog seed. Idempotent; safe to re-run.
+bootstrap:
+	./scripts/bootstrap.sh
 
 clean:
 	docker compose down -v
