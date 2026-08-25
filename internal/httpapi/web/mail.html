@@ -44,11 +44,12 @@
         <button type="submit" class="btn btn--primary">Create mailbox</button>
       </form>
       <h3>Aliases</h3>
+      <p class="hint">Aliases bound to a platform group (§42) are group-managed: the reconciler keeps their destinations in sync with the group's active member identities.</p>
       <div class="table-wrap">
       <table>
         <thead><tr><th>Address</th><th>Destinations</th></tr></thead>
         <tbody>
-        {{range .Data.Aliases}}<tr><td>{{.Address}}</td><td>{{range .Destinations}}{{.}} {{end}}</td></tr>{{end}}
+        {{range .Data.Aliases}}<tr><td>{{.Address}}{{if index $.Data.AliasGroups .ID}} <span class="badge">group: {{index $.Data.AliasGroups .ID}}</span>{{end}}</td><td>{{range .Destinations}}{{.}} {{end}}</td></tr>{{end}}
         {{if not .Data.Aliases}}<tr><td colspan="2" class="empty">No aliases yet — add one below.</td></tr>{{end}}
         </tbody>
       </table>

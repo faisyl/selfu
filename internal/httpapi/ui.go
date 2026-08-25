@@ -69,6 +69,9 @@ type uiMailData struct {
 	MailDomain *domain.MailDomain
 	Identities []domain.MailIdentity
 	Aliases    []domain.MailAlias
+	// AliasGroups maps the ID of a group-bound alias (§42) to its group
+	// name; plain aliases are absent.
+	AliasGroups map[string]string
 }
 
 type uiCatalogData struct {
@@ -192,6 +195,21 @@ func (h *Handler) uiMail(w http.ResponseWriter, r *http.Request) {
 				data.Err = aerr.Error()
 			}
 			data.Aliases = aliases
+			// Resolve §42 group bindings so the page can show which
+			// aliases are group-managed (reconciler-owned destinations).
+			for _, a := range aliases {
+				if a.GroupID == nil {
+					continue
+				}
+				g, gerr := h.d.IdentityStore.GetGroupByID(r.Context(), *a.GroupID)
+				if gerr != nil {
+					continue
+				}
+				if data.AliasGroups == nil {
+					data.AliasGroups = make(map[string]string)
+				}
+				data.AliasGroups[a.ID] = g.Name
+			}
 		}
 	}
 	h.uiRender(w, "mail", data)

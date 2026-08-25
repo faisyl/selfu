@@ -140,11 +140,12 @@ func (f *fakeOnboardIdentities) SetExternalStatus(_ context.Context, _, _, _ str
 
 // fakeMailStore is an in-memory MailStore for the onboard-user tests.
 type fakeMailStore struct {
-	mailDomains  map[string]domain.MailDomain // domain id -> mail domain
-	identities   map[string]domain.MailIdentity
-	byAddress    map[string]string
-	credentials  []string
-	policies     int
+	mailDomains     map[string]domain.MailDomain // domain id -> mail domain
+	identities      map[string]domain.MailIdentity
+	byAddress       map[string]string
+	credentials     []string
+	policies        int
+	aliasesByDomain map[string][]domain.MailAlias
 }
 
 func newFakeMailStore() *fakeMailStore {
@@ -227,8 +228,8 @@ func (f *fakeMailStore) CreateMailAlias(_ context.Context, a domain.MailAlias) (
 func (f *fakeMailStore) GetMailAliasByAddress(_ context.Context, _ string) (domain.MailAlias, error) {
 	return domain.MailAlias{}, store.ErrNotFound
 }
-func (f *fakeMailStore) ListMailAliasesByDomain(_ context.Context, _ string) ([]domain.MailAlias, error) {
-	return nil, nil
+func (f *fakeMailStore) ListMailAliasesByDomain(_ context.Context, domainID string) ([]domain.MailAlias, error) {
+	return f.aliasesByDomain[domainID], nil
 }
 func (f *fakeMailStore) UpdateMailAliasDestinations(_ context.Context, _ string, _ []string) error {
 	return nil
