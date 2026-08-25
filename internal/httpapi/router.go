@@ -22,6 +22,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/v1/organizations", h.authn(h.createOrganization))
 	mux.Handle("GET /api/v1/organizations", h.authn(h.listOrganizations))
 	mux.Handle("POST /api/v1/organizations/{id}/members", h.authn(h.addOrganizationMember))
+	mux.Handle("POST /api/v1/organizations/{id}/onboard-user", h.authn(h.onboardUser))
 	mux.Handle("GET /api/v1/organizations/{id}/members", h.authn(h.listOrganizationMembers))
 	mux.Handle("POST /api/v1/users/{id}/disable", h.authn(h.disableUser))
 	mux.Handle("POST /api/v1/users/{id}/enable", h.authn(h.enableUser))
