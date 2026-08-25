@@ -42,6 +42,9 @@ func (c *Cloudflare) DNS() dns.Provider { return c.dns }
 // ACME is the DNS-01 resolver configuration for Traefik.
 func (c *Cloudflare) ACME() string { return c.acme }
 
+// Automated reports that this provider writes DNS records itself.
+func (c *Cloudflare) Automated() bool { return true }
+
 // Validate checks the zone is reachable with the configured credentials.
 func (c *Cloudflare) Validate(ctx context.Context) error {
 	if zone, ok := c.dns.(*dns.CloudflareProvider); ok {

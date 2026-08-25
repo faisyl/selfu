@@ -43,8 +43,12 @@ func NewManual() *Manual { return &Manual{} }
 // Name matches the "manual" provider identifier.
 func (Manual) Name() string { return "manual" }
 
-// DNS is the manual DNS surface (never auto-provisions).
-func (Manual) DNS() dns.Provider { return dns.ManualProvider{} }
+// DNS is the manual DNS surface (never auto-provisions; emits
+// instructions).
+func (Manual) DNS() dns.Provider { return manualDNS{} }
+
+// Automated reports that this provider never writes records itself.
+func (Manual) Automated() bool { return false }
 
 // ACME emits no challenge configuration.
 func (Manual) ACME() string { return "" }
@@ -60,20 +64,31 @@ func (Manual) Validate(context.Context) error { return nil }
 type Config struct {
 	APIToken string `json:"api_token"`
 	ZoneID   string `json:"zone_id"`
+
+	// AWS credentials for the route53 provider (hosted zone id reuses
+	// ZoneID). When empty they fall back to the standard environment
+	// variables AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+	// AWS_SESSION_TOKEN and AWS_REGION.
+	AWSAccessKeyID     string `json:"aws_access_key_id,omitempty"`
+	AWSSecretAccessKey string `json:"aws_secret_access_key,omitempty"`
+	AWSSessionToken    string `json:"aws_session_token,omitempty"`
+	AWSRegion          string `json:"aws_region,omitempty"`
 }
 
 // ErrUnknownProvider is returned when a provider identifier is not
 // registered.
 var ErrUnknownProvider = errors.New("access: unknown provider")
 
-// New builds the provider named name. cloudflare requires an API token and
-// zone id; manual ignores cfg.
+// New builds the provider named name. cloudflare and route53 require
+// provider credentials (see their constructors); manual ignores cfg.
 func New(name string, cfg Config, opts ...Option) (Provider, error) {
 	switch name {
 	case "manual":
 		return NewManual(), nil
 	case "cloudflare":
 		return NewCloudflare(cfg, opts...), nil
+	case "route53":
+		return NewRoute53(cfg, opts...), nil
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownProvider, name)
 	}
@@ -84,11 +99,18 @@ type Option func(*options)
 
 type options struct {
 	baseURL string
+	route53 route53API
 }
 
 // WithBaseURL overrides the Cloudflare API base URL (testing).
 func WithBaseURL(base string) Option {
 	return func(o *options) { o.baseURL = base }
+}
+
+// WithRoute53Client injects the AWS Route 53 seam (testing; no live calls
+// are made with a fake client).
+func WithRoute53Client(api route53API) Option {
+	return func(o *options) { o.route53 = api }
 }
 
 // ACMEChallengeFor renders the Traefik DNS-01 resolver block for the given
@@ -98,6 +120,8 @@ func ACMEChallengeFor(name string, cfg Config) string {
 	switch name {
 	case "cloudflare":
 		return "dnschallenge.provider=cloudflare"
+	case "route53":
+		return "dnschallenge.provider=route53"
 	default:
 		return ""
 	}
