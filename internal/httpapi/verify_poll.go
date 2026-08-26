@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"selfu/internal/domain"
 	"selfu/internal/dns"
+	"selfu/internal/domain"
 )
 
 // This file closes the onboarding auto-verify loop: the exact verification

@@ -393,21 +393,21 @@ type xmlChangeRequest struct {
 	XMLName     xml.Name `xml:"ChangeResourceRecordSetsRequest"`
 	XMLNS       string   `xml:"xmlns,attr"`
 	ChangeBatch struct {
-		Comment string       `xml:"Comment"`
-		Changes []xmlChange  `xml:"Changes>Change"`
+		Comment string      `xml:"Comment"`
+		Changes []xmlChange `xml:"Changes>Change"`
 	} `xml:"ChangeBatch"`
 }
 
 type xmlChange struct {
-	Action            string    `xml:"Action"`
-	ResourceRecordSet xmlRRSet  `xml:"ResourceRecordSet"`
+	Action            string   `xml:"Action"`
+	ResourceRecordSet xmlRRSet `xml:"ResourceRecordSet"`
 }
 
 type xmlRRSet struct {
-	Name       string      `xml:"Name"`
-	Type       string      `xml:"Type"`
-	TTL        int64       `xml:"TTL"`
-	Records    []xmlRecord `xml:"ResourceRecords>ResourceRecord"`
+	Name    string      `xml:"Name"`
+	Type    string      `xml:"Type"`
+	TTL     int64       `xml:"TTL"`
+	Records []xmlRecord `xml:"ResourceRecords>ResourceRecord"`
 }
 
 type xmlRecord struct {

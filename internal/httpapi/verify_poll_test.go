@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"selfu/internal/domain"
 	"selfu/internal/dns"
+	"selfu/internal/domain"
 )
 
 // createPendingPrimary drives the wizard create endpoint so a pending

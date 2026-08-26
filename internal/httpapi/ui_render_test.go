@@ -63,11 +63,11 @@ func sampleMailData() uiMailData {
 		CreatedAt: time.Unix(1700000000, 0), UpdatedAt: time.Unix(1700000000, 0),
 	}
 	return uiMailData{
-		uiBase:   sampleBase("mail", "Mail"),
-		Orgs:     sampleOrgs(),
-		OrgID:    "org-1",
-		DomainID: "dom-1",
-		FQDN:     "pruxi.in",
+		uiBase:     sampleBase("mail", "Mail"),
+		Orgs:       sampleOrgs(),
+		OrgID:      "org-1",
+		DomainID:   "dom-1",
+		FQDN:       "pruxi.in",
 		MailDomain: md,
 		Identities: []domain.MailIdentity{{
 			ID: "mi-1", OrganizationID: "org-1", DomainID: "dom-1",

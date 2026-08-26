@@ -65,9 +65,11 @@ func (f *fakeOnboardIdentities) GetMembershipRole(_ context.Context, orgID, user
 func (f *fakeOnboardIdentities) ListMemberships(_ context.Context, _ string) ([]store.Member, error) {
 	return nil, nil
 }
-func (f *fakeOnboardIdentities) RemoveMembership(_ context.Context, _, _ string) error       { return nil }
-func (f *fakeOnboardIdentities) RemoveAllMemberships(_ context.Context, _ string) error      { return nil }
-func (f *fakeOnboardIdentities) RemoveAllGroupMemberships(_ context.Context, _ string) error { return nil }
+func (f *fakeOnboardIdentities) RemoveMembership(_ context.Context, _, _ string) error  { return nil }
+func (f *fakeOnboardIdentities) RemoveAllMemberships(_ context.Context, _ string) error { return nil }
+func (f *fakeOnboardIdentities) RemoveAllGroupMemberships(_ context.Context, _ string) error {
+	return nil
+}
 
 func (f *fakeOnboardIdentities) CreateGroup(_ context.Context, g domain.Group) (domain.Group, error) {
 	g.ID = "g-new"
@@ -136,7 +138,9 @@ func (f *fakeOnboardIdentities) GetExternalResource(_ context.Context, _, platfo
 	}
 	return domain.ExternalResource{}, store.ErrNotFound
 }
-func (f *fakeOnboardIdentities) SetExternalStatus(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakeOnboardIdentities) SetExternalStatus(_ context.Context, _, _, _ string) error {
+	return nil
+}
 
 // fakeMailStore is an in-memory MailStore for the onboard-user tests.
 type fakeMailStore struct {
@@ -263,13 +267,13 @@ func (f *fakeMTA) ChangePassword(_ context.Context, _ string, _ chasquid.Secret)
 // onboardFixture wires a handler with admin actor, one org-scoped verified
 // domain and (optionally) its active mail domain.
 type onboardFixture struct {
-	h          *Handler
-	sessions   interface{ CookieName() string }
-	token      string
-	idStore    *fakeOnboardIdentities
-	mailStore  *fakeMailStore
-	mta        *fakeMTA
-	audit      *fakeAudit
+	h         *Handler
+	sessions  interface{ CookieName() string }
+	token     string
+	idStore   *fakeOnboardIdentities
+	mailStore *fakeMailStore
+	mta       *fakeMTA
+	audit     *fakeAudit
 }
 
 func newOnboardFixture(t *testing.T, withMail bool) *onboardFixture {
