@@ -2,7 +2,7 @@
 
 **selfu** — self-hosted multi-domain application & mail platform (Go, PostgreSQL, Docker Compose).
 
-The authoritative sources are `spec.md` (v0.2 technical spec, **read-only — never modify**) and `GOALS.md` (durable session contract, phased goals G1–G9, all currently done, verified 2026-08-18). Follow `GOALS.md`'s resume procedure after any session boundary: pick the first pending goal, satisfy binary criteria, run verification, update the table, commit. There is no README yet.
+The authoritative sources are `spec.md` (v0.2 technical spec, **read-only — never modify**) and `GOALS.md` (durable session contract, phased goals G1–G9, all currently done, verified 2026-08-18). Follow `GOALS.md`'s resume procedure after any session boundary: pick the first pending goal, satisfy binary criteria, run verification, update the table, commit. The operator runbook (first-run bootstrap → wizard → user onboarding → invites) lives in `README.md`.
 
 ## Project Overview
 
@@ -29,7 +29,7 @@ cmd/authentik-bootstrap ──> authentik (idempotent OIDC provider/app boot)
 
 | Path | Purpose |
 |---|---|
-| `cmd/api/`, `cmd/worker/`, `cmd/migrate/`, `cmd/chasquid-agent/`, `cmd/authentik-bootstrap/` | five thin binaries; each `main()` |
+| `cmd/api/`, `cmd/worker/`, `cmd/migrate/`, `cmd/chasquid-agent/`, `cmd/authentik-bootstrap/`, `cmd/doctor/`, `cmd/seed/` | thin binaries; each `main()` |
 | `internal/httpapi/` | REST API + server-rendered UI (`web/*.html`), `router.go` = route truth |
 | `internal/store/` | only persistence owner; `interfaces.go` seams, `migrations/*.sql` (goose), `const ...SQL` query literals per file |
 | `internal/domain/` | pure entities: `models.go` (User, AuditEvent), `mail.go`, `domains.go`, `identity.go` |
@@ -38,7 +38,7 @@ cmd/authentik-bootstrap ──> authentik (idempotent OIDC provider/app boot)
 | `internal/chasquid/` | `ChasquidController` interface + `AgentClient` HTTP wrapper into the sidecar; `Secret` redacted in logs |
 | `internal/provision/` | 7-step mailbox provisioning pipeline (`Provisioner`, `Rotate`); credential fingerprint stored, never plaintext |
 | `internal/recon/` | reconciliation worker logic |
-| `internal/dns/` | `Provider` abstraction: `ManualProvider` / `CloudflareProvider`; `TXTLookup` verification |
+| `internal/dns/`, `internal/access/` | DNS `Provider` (`ManualProvider` / `CloudflareProvider`) with `TXTLookup` verification; `access.Provider` composes DNS + ACME challenge per external-access provider (`manual` / `cloudflare` / `route53`), selected at setup |
 | `internal/catalog/`, `internal/deploy/`, `internal/traefik/` | pure generators: strict YAML app catalog (unknown fields **rejected**), Compose renderer, Traefik route labels |
 | `internal/config/` | `config.Load()` — env-only, validation, `SELFU_*` constants single source of truth |
 | `internal/version/` | `version.Version` injected via ldflags |
@@ -54,6 +54,8 @@ make fmt            # gofmt -w .
 make up             # docker compose up -d --wait   (full stack)
 make down / ps / logs
 make gen-env        # copy .env from .env.example; regenerate ONLY secret fields (openssl rand)
+make doctor         # preflight: docker, ports :18080/:9000, DNS, provider token (idempotent-safe)
+make bootstrap      # one-command first run: doctor → gen-env → up --wait → migrate → authentik-bootstrap → seed → summary
 make migrate-up     # go run ./cmd/migrate up
 make migrate-status # go run ./cmd/migrate status
 make clean          # docker compose down -v && go clean
@@ -84,14 +86,14 @@ make clean          # docker compose down -v && go clean
 - `docker/chasquid.Dockerfile` — 4-stage MTA build (`chasquid v1.17.0` pinned + agent)
 - `internal/store/migrations/` — ordered SQL migrations (goose), must stay idempotent
 - `internal/httpapi/router.go` — single source of truth for REST surface
-- `scripts/*.sh` — acceptance, DNS, backup; build the operational runbook from these
+- `scripts/*.sh` — acceptance, bootstrap, DNS records, backup; `README.md` is the operational runbook built on these
 
 ## Runtime/Tooling Preferences
 
 - **Language**: Go 1.26.6; **module path `selfu`** (`go.mod`, no external module prefix).
 - **Runtime**: container-first via Docker Compose; dev against `docker compose up -d --wait` + local `Makefile` targets. Local run needs `.env` present: `cp .env.example .env && make gen-env` (edit `PUBLIC_IP`/hostnames after).
 - **Env config**: all config via environment (`SELFU_*` / `AUTHENTIK_*` / `CLOUDFLARE_*` / `CHASQUID_*` — see `internal/config/`). Required: `SELFU_DATABASE_URL`, OIDC client, `SELFU_SESSION_SECRET` ≥ 32 bytes, `AUTHENTIK_URL/TOKEN`. No config files or CLI flags.
-- **Known environment nits** (don't "fix" silently, they're live-checked): `.env.example` fuses `SELFU_OIDC_ISSUER_PATH` and `SELFU_AUTHENTIK_URL` on one line and omits `SELFU_OIDC_ISSUER` (compose sets `https://${AUTH_HOST}/application/o/selfu/`); `migrate-up`/`migrate-status` work on a `go run ./cmd/migrate` target.
+- **Known environment nits** (don't "fix" silently, they're live-checked): `migrate-up`/`migrate-status` work on a `go run ./cmd/migrate` target — inside the compose stack use the `migrate` service instead (`docker compose run --rm migrate up`, which is what `scripts/bootstrap.sh` does; the DB port is not published to the host).
 - App-install provider (compose-'up' for catalog apps) is still open/deferred — the API container has **no Docker socket**; deployment currently renders Compose only.
 
 ## Testing & QA
