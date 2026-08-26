@@ -39,6 +39,10 @@ func (h *Handler) buildRouter() http.Handler {
 	mux.Handle("GET /api/v1/organizations", h.authn(h.listOrganizations))
 	mux.Handle("POST /api/v1/organizations/{id}/members", h.authn(h.addOrganizationMember))
 	mux.Handle("POST /api/v1/organizations/{id}/onboard-user", h.authn(h.onboardUser))
+	mux.Handle("POST /api/v1/organizations/{id}/invites", h.authn(h.createInvite))
+	// Invite redemption is unauthenticated: the single-use token IS the
+	// credential (same pattern as setup/login).
+	mux.HandleFunc("POST /api/v1/invites/accept", h.acceptInvite)
 	mux.Handle("GET /api/v1/organizations/{id}/members", h.authn(h.listOrganizationMembers))
 	mux.Handle("POST /api/v1/users/{id}/disable", h.authn(h.disableUser))
 	mux.Handle("POST /api/v1/users/{id}/enable", h.authn(h.enableUser))

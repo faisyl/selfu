@@ -44,6 +44,12 @@ type Deps struct {
 	Identity IdentityProvisioner
 	// ProviderName labels external_resources (the authentik issuer).
 	ProviderName string
+	// Invites persists single-use invite tokens (invite-first-login).
+	// Nil disables invite issuance/acceptance routes' persistence — handlers
+	// treat it as required and fail closed via internal errors.
+	Invites InviteStore
+	// PasswordSetter sets an invited user's password upstream in authentik.
+	PasswordSetter PasswordSetter
 
 	// DomainStore is the domain/hostname persistence surface (G3).
 	DomainStore store.DomainStore

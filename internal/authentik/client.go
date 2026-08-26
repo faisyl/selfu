@@ -138,6 +138,13 @@ func (c *Client) SetUserActive(ctx context.Context, pk string, active bool) erro
 		map[string]any{"is_active": active}, nil)
 }
 
+// SetUserPassword sets (or resets) an authentik user's password by external
+// pk so an invited user can sign in with credentials they chose themselves.
+func (c *Client) SetUserPassword(ctx context.Context, pk, password string) error {
+	return c.Do(ctx, http.MethodPost, "/api/v3/core/users/"+pk+"/set_password/", nil,
+		map[string]any{"password": password}, nil)
+}
+
 // EnsureGroup creates (or reuses) the authentik group and returns its pk.
 func (c *Client) EnsureGroup(ctx context.Context, name string) (string, error) {
 	var existing struct {

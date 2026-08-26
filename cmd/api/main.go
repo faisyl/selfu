@@ -25,6 +25,9 @@ import (
 	"selfu/internal/version"
 )
 
+// The pg store satisfies every handler seam, including invites.
+var _ httpapi.InviteStore = (*store.Store)(nil)
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger); err != nil {
@@ -97,6 +100,8 @@ func run(logger *slog.Logger) error {
 		IdentityStore:     st,
 		Identity:          ak,
 		ProviderName:      cfg.OIDC.Issuer,
+		Invites:           st,
+		PasswordSetter:    ak,
 		DomainStore:       st,
 		DNSProvider:       dnsProvider,
 		TXTLookup:         txtLookup(cfg),
@@ -125,8 +130,8 @@ func run(logger *slog.Logger) error {
 	apiHandler.StartVerificationPoller(ctx, pollInterval)
 
 	srv := &http.Server{
-		Addr:    cfg.HTTPAddr,
-		Handler: apiHandler.BuildRouter(),
+		Addr:              cfg.HTTPAddr,
+		Handler:           apiHandler.BuildRouter(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
